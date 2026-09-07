@@ -80,6 +80,32 @@ class QdrantService:
             logger.error(f"Error upserting vectors into Qdrant for tenant {clean_tenant_id}: {e}")
             raise
 
+    async def upsert_document(
+        self,
+        tenant_id: str,
+        document_id: str,
+        vector: List[float],
+        title: str = "",
+        content: str = "",
+        project_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        collection_name: Optional[str] = None
+    ) -> bool:
+        """Upsert a single document vector into Qdrant with tenant and project isolation."""
+        coll = collection_name or settings.QDRANT_COLLECTION
+        payload = {
+            "title": title,
+            "content": content,
+            "project_id": str(project_id) if project_id else "",
+            "metadata": metadata or {}
+        }
+        await self.upsert_documents(
+            tenant_id=tenant_id,
+            collection_name=coll,
+            points=[{"id": document_id, "vector": vector, "payload": payload}]
+        )
+        return True
+
     async def search(
         self,
         tenant_id: str,
