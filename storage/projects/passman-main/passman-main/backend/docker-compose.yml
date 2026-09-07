@@ -1,0 +1,53 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOSTNAME=mysql
+      - DB_PORT=3306
+      - DB_NAME=passman
+      - DB_USER=test
+      - DB_PASSWORD=123
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION}
+      - APP_ORIGIN_URL=${APP_ORIGIN_URL}
+    depends_on:
+      - mysql
+    networks:
+      - passman-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_DATABASE=passman
+      - MYSQL_USER=test
+      - MYSQL_PASSWORD=123
+      - MYSQL_ROOT_PASSWORD=root_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - passman-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  passman-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
