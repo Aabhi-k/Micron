@@ -1,107 +1,97 @@
-import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
-from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.reranker")
 
 class ReRankingService:
-    """Provides Reciprocal Rank Fusion (RRF) and Cross-Encoder Re-ranking."""
+    """Re-ranks retrieved candidate passages using a deep Cross-Encoder model and RRF."""
 
-    def __init__(self):
+    def __init__(self, model_name: Optional[str] = None):
+        self.model_name = model_name or settings.CROSS_ENCODER_MODEL
         self._cross_encoder = None
 
     def _get_cross_encoder(self):
         if self._cross_encoder is None:
             try:
                 from sentence_transformers import CrossEncoder
-                logger.info(f"Loading Cross-Encoder model: {settings.CROSS_ENCODER_MODEL}")
-                self._cross_encoder = CrossEncoder(settings.CROSS_ENCODER_MODEL)
+                logger.info(f"Loading CrossEncoder model: {self.model_name}")
+                self._cross_encoder = CrossEncoder(self.model_name)
             except Exception as e:
-                logger.warning(f"Could not load CrossEncoder '{settings.CROSS_ENCODER_MODEL}': {e}")
+                logger.warning(f"Failed to load CrossEncoder model '{self.model_name}': {e}")
                 self._cross_encoder = None
         return self._cross_encoder
 
-    @observe(name="reciprocal_rank_fusion", as_type="span")
     def reciprocal_rank_fusion(
         self,
         dense_results: List[Dict[str, Any]],
         sparse_results: List[Dict[str, Any]],
-        k: Optional[int] = None
+        k: int = 60
     ) -> List[Dict[str, Any]]:
-        """
-        Merges dense and sparse rankings using Reciprocal Rank Fusion (RRF) with constant k=60.
-        Score formula: RRF(d) = sum(1 / (k + rank))
-        """
-        constant_k = k if k is not None else settings.RRF_K
-        scores: Dict[str, float] = {}
-        doc_map: Dict[str, Dict[str, Any]] = {}
+        """Compute Reciprocal Rank Fusion scores across dense and sparse ranking sets."""
+        rrf_scores: Dict[str, float] = {}
+        doc_registry: Dict[str, Dict[str, Any]] = {}
 
-        # Process dense ranking (1-indexed rank)
-        for rank, doc in enumerate(dense_results, start=1):
+        # Dense ranking: 1 / (k + rank)
+        for rank_idx, doc in enumerate(dense_results, start=1):
             doc_id = str(doc.get("doc_id") or doc.get("id"))
-            scores[doc_id] = scores.get(doc_id, 0.0) + (1.0 / (constant_k + rank))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = doc
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (k + rank_idx))
+            if doc_id not in doc_registry:
+                doc_registry[doc_id] = doc.copy()
 
-        # Process sparse BM25 ranking (1-indexed rank)
-        for rank, doc in enumerate(sparse_results, start=1):
+        # Sparse ranking: 1 / (k + rank)
+        for rank_idx, doc in enumerate(sparse_results, start=1):
             doc_id = str(doc.get("doc_id") or doc.get("id"))
-            scores[doc_id] = scores.get(doc_id, 0.0) + (1.0 / (constant_k + rank))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = doc
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (k + rank_idx))
+            if doc_id not in doc_registry:
+                doc_registry[doc_id] = doc.copy()
 
-        # Sort candidates by combined RRF score descending
-        sorted_doc_ids = sorted(scores.keys(), key=lambda d_id: scores[d_id], reverse=True)
+        sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda did: rrf_scores[did], reverse=True)
+        fused = []
+        for did in sorted_doc_ids:
+            item = doc_registry[did].copy()
+            item["rrf_score"] = rrf_scores[did]
+            fused.append(item)
+        return fused
 
-        fused_results = []
-        for d_id in sorted_doc_ids:
-            doc = doc_map[d_id].copy()
-            doc["rrf_score"] = scores[d_id]
-            fused_results.append(doc)
-
-        return fused_results
-
-    @observe(name="cross_encoder_rerank", as_type="span")
     async def rerank(
         self,
         query: str,
         candidates: List[Dict[str, Any]],
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
-        """
-        Re-ranks RRF candidates using a Cross-Encoder (ms-marco-MiniLM-L-6-v2).
-        Falls back smoothly to RRF order if the Cross-Encoder is not available.
-        """
+        """Compute cross-attention scores for (query, doc_content) pairs and sort descending."""
         if not candidates:
             return []
 
-        ce = self._get_cross_encoder()
-        if ce is None:
-            logger.info("Cross-Encoder unavailable; returning top RRF candidates.")
+        model = self._cross_encoder or self._get_cross_encoder()
+        if model is None:
+            logger.info("CrossEncoder unavailable; retaining existing ordering.")
             return candidates[:top_k]
 
-        pairs = [[query, doc.get("content", "")] for doc in candidates]
-
         try:
-            def _predict():
-                scores = ce.predict(pairs)
-                return [float(s) for s in scores]
+            pairs = []
+            for doc in candidates:
+                content = doc.get("content") or doc.get("payload", {}).get("content", "")
+                pairs.append((query, content))
 
-            ce_scores = await asyncio.to_thread(_predict)
+            scores = model.predict(pairs)
 
             reranked = []
-            for doc, score in zip(candidates, ce_scores):
+            for i, doc in enumerate(candidates):
                 doc_copy = doc.copy()
-                doc_copy["cross_encoder_score"] = score
+                score_val = float(scores[i])
+                doc_copy["cross_encoder_score"] = score_val
+                doc_copy["rerank_score"] = score_val
                 reranked.append(doc_copy)
 
             reranked.sort(key=lambda x: x["cross_encoder_score"], reverse=True)
             return reranked[:top_k]
 
         except Exception as e:
-            logger.warning(f"Cross-Encoder inference error: {e}. Falling back to RRF ranking.")
+            logger.warning(f"Error during cross-encoder reranking: {e}. Falling back to input order.")
             return candidates[:top_k]
 
+# Aliases and singleton
+RerankerService = ReRankingService
 reranker_service = ReRankingService()

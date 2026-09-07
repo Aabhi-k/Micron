@@ -94,9 +94,10 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       - RRF_K=60
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-micron-local}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-micron-local}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+
     volumes:
       - ./storage/projects:/data/nexsolve/projects
       - ./vector_store:/data/nexsolve/vector_store

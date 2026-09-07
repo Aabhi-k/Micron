@@ -80,4 +80,8 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
+# Micron Local Storage & Vector DB
+storage/
+vector_store/
 qdrant_storage/
+postgres_data/

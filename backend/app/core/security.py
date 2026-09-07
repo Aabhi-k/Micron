@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 from fastapi import HTTPException
 from app.core.config import settings
 
@@ -30,3 +31,21 @@ def validate_safe_path(project_id: str, relative_path: str = "") -> Path:
             detail=f"Security Alert: Path traversal attempt detected: {relative_path}"
         )
     return target
+
+def validate_tenant_id(tenant_id: Optional[str]) -> str:
+    """Strictly validates tenant_id to prevent multi-tenant data leakage.
+    Raises HTTPException(400) or ValueError if tenant_id is missing or malformed.
+    """
+    if not tenant_id or not str(tenant_id).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Security Violation: A valid tenant_id is strictly required for this operation."
+        )
+    cleaned = str(tenant_id).strip()
+    if "/" in cleaned or "\\" in cleaned or ".." in cleaned:
+        raise HTTPException(
+            status_code=400,
+            detail="Security Violation: Malformed tenant_id detected."
+        )
+    return cleaned
+
