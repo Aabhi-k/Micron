@@ -101,13 +101,28 @@ async def health_check():
         "reranker": settings.CROSS_ENCODER_MODEL
     }
 
+from app.services.rag_engine import search_business_docs
+from fastapi import Header
+
 # Compatibility endpoint for frontend chat generation
 @app.post("/api/v1/chat/generate", response_model=ChatResponse, tags=["Chat"])
-async def generate_chat(request: ChatRequest):
+async def generate_chat(request: ChatRequest, x_tenant_id: str = Header(..., alias="X-Tenant-ID")):
     sanitized_code = mock_mcp_read_and_redact(request.file_path)
-    bpds = mock_rag_fetch_bpd(request.query, request.file_path)
+    
+    # Use Person B's actual Hybrid Retrieval Engine!
+    rag_results = await search_business_docs(
+        tenant_id=x_tenant_id,
+        query=request.query,
+        top_k=3
+    )
+    
+    # Extract the chunk texts from the results
+    bpds = [res.get("content", "") for res in rag_results]
+    if not bpds:
+        bpds = ["No relevant internal documentation found for this query."]
+        
     trace_id = str(uuid.uuid4())
-    markdown = f"# Legacy Documentation\n\n## Sanitized Context\n```python\n{sanitized_code}\n```\n\n## Applied Rules\n" + "\n".join(bpds)
+    markdown = f"# Legacy Documentation\n\n## Sanitized Context\n```python\n{sanitized_code}\n```\n\n## Applied Rules\n" + "\n---\n".join(bpds)
     
     return ChatResponse(
         markdown=markdown,
@@ -115,6 +130,10 @@ async def generate_chat(request: ChatRequest):
         citations=bpds,
         trace_id=trace_id
     )
+
+# Mount Person A's File Upload Ingestion Router
+from app.api.v1.endpoints.documents import router as upload_router
+app.include_router(upload_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn

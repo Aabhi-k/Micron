@@ -87,3 +87,4 @@ storage/projects/*
 vector_store/
 qdrant_storage/
 
+*.whl
