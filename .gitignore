@@ -80,3 +80,4 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
+qdrant_storage/
