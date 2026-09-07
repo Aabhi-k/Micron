@@ -1,0 +1,10 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+qdrant-client
+langfuse
+psycopg2-binary
+sqlalchemy
+mcp
+langchain
+pydantic
+python-dotenv
