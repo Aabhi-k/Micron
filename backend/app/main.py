@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
     # 2. Ensure Qdrant Vector Collection exists with isolated indexes
     dim = 1536 if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("sk-placeholder") else 384
     await qdrant_service.ensure_collection(settings.QDRANT_COLLECTION, vector_size=dim)
+    from app.core.qdrant import init_qdrant_collection
+    await init_qdrant_collection()
 
     # 3. Verify Redis connection
     if await ping_redis():
@@ -131,9 +133,12 @@ async def generate_chat(request: ChatRequest, x_tenant_id: str = Header(..., ali
         trace_id=trace_id
     )
 
-# Mount Person A's File Upload Ingestion Router
+# Mount Person A's File Upload Ingestion Router and Person B's RAG Router
 from app.api.v1.endpoints.documents import router as upload_router
+from app.api.v1.endpoints.rag import router as rag_router
+
 app.include_router(upload_router, prefix="/api/v1")
+app.include_router(rag_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
