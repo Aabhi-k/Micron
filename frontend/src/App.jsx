@@ -5,6 +5,8 @@ import GreetingSection from './components/GreetingSection'
 import MessageInput from './components/MessageInput'
 import AdminDashboard from './components/AdminDashboard'
 import ActivityView from './components/ActivityView'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { FileCode, Tag, CheckCircle2, AlertCircle } from 'lucide-react'
 
 // Initial pre-populated history items for demonstration
@@ -63,14 +65,16 @@ function App() {
     setError(null)
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/chat/generate', {
+      const response = await fetch('http://localhost:8000/api/v1/chat/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Tenant-ID': 'default-tenant'
         },
         body: JSON.stringify({
+          project_id: 'passman-main',
           query: queryText,
-          file_path: selectedPath || '',
+          file_path: selectedPath || undefined,
         }),
       })
 
@@ -79,9 +83,18 @@ function App() {
       }
 
       const data = await response.json()
+      
+      // Map the backend's response format to what the UI expects
+      const formattedData = {
+        markdown: data.response,
+        sanitized_code: data.ast_metadata ? `// Extracted from: ${data.ast_metadata.file}\n// Function: ${data.ast_metadata.function_name}\n// Redactions applied: ${data.ast_metadata.redactions.join(', ') || 'None'}` : null,
+        citations: [],
+        trace_id: data.tenant_id
+      }
+
       const assistantMessage = {
         role: 'assistant',
-        data: data, // { markdown, sanitized_code, citations, trace_id }
+        data: formattedData,
       }
       setMessages((prev) => [...prev, assistantMessage])
 
@@ -91,7 +104,7 @@ function App() {
         query: queryText,
         filePath: selectedPath || '',
         timestamp: 'Just now',
-        response: data,
+        response: formattedData,
       }
       setActivityHistory((prev) => [historyItem, ...prev])
     } catch (err) {
@@ -182,8 +195,10 @@ function App() {
                             ) : (
                               <>
                                 {/* Markdown text output */}
-                                <div className="prose prose-sm max-w-none space-y-2 whitespace-pre-wrap">
-                                  {msg.data?.markdown}
+                                <div className="prose prose-sm max-w-none">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {msg.data?.markdown}
+                                  </ReactMarkdown>
                                 </div>
 
                                 {/* Sanitized Code Box if present */}

@@ -29,6 +29,8 @@ class GitCloneRequest(BaseModel):
 def _parse_tenant_uuid(x_tenant_id: str) -> uuid.UUID:
     if not x_tenant_id or not x_tenant_id.strip():
         raise HTTPException(status_code=400, detail="X-Tenant-ID header is required.")
+    if x_tenant_id == "default-tenant":
+        return uuid.UUID("00000000-0000-0000-0000-000000000001")
     try:
         return uuid.UUID(x_tenant_id)
     except (ValueError, AttributeError):
@@ -113,6 +115,32 @@ async def get_project(
         "root_path": str(root),
         "file_count": file_count
     }
+
+@router.get("/{project_id}/files")
+async def get_project_files(
+    project_id: str,
+    x_tenant_id: str = Header(..., alias="X-Tenant-ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns a recursive file tree for the frontend sidebar."""
+    tenant_uuid = _parse_tenant_uuid(x_tenant_id)
+
+    root = get_project_root(project_id)
+    if not root.exists():
+        raise HTTPException(status_code=404, detail="Project not found on disk.")
+
+    def build_tree(current_path: Path):
+        entries = []
+        for p in sorted(current_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if p.name in {".git", "node_modules", "target", "build", "dist", "__pycache__", ".mvn"}:
+                continue
+            if p.is_dir():
+                entries.append({"name": p.name, "kind": "directory", "children": build_tree(p)})
+            else:
+                entries.append({"name": p.name, "kind": "file"})
+        return entries
+
+    return build_tree(root)
 
 
 @router.post("/upload")

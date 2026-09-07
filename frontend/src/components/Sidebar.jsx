@@ -1,49 +1,32 @@
-import { useState } from "react"
-import { LayoutDashboard, Activity, PenSquare, Plus, Folder, FolderOpen, RefreshCw, Loader2 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { LayoutDashboard, Activity, PenSquare, Plus, FolderOpen, RefreshCw, Loader2 } from "lucide-react"
 import FileTree from "./FileTree"
 
-const navLinks = [
-  { icon: Activity, label: "Activity" },
-]
-
-// Recursively read a directory handle into a plain tree structure
-async function readDir(dirHandle) {
-  const entries = []
-  for await (const [name, handle] of dirHandle.entries()) {
-    if (handle.kind === "directory") {
-      const children = await readDir(handle)
-      entries.push({ name, kind: "directory", children })
-    } else {
-      entries.push({ name, kind: "file" })
-    }
-  }
-  // Sort: folders first, then files, both alphabetically
-  return entries.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
-}
-
 export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenDashboard, onOpenActivity }) {
-  const [rootName, setRootName]   = useState(null)
+  const [rootName, setRootName]   = useState("passman-main")
   const [tree, setTree]           = useState(null)
   const [loading, setLoading]     = useState(false)
 
-  const pickDirectory = async () => {
+  const loadProjectFiles = async () => {
     try {
-      const dirHandle = await window.showDirectoryPicker({ mode: "read" })
       setLoading(true)
-      setTree(null)
-      setRootName(dirHandle.name)
-      if (onSelectFile) onSelectFile(dirHandle.name)
-      const result = await readDir(dirHandle)
-      setTree(result)
-    } catch {
-      // user cancelled — do nothing
+      const res = await fetch("http://localhost:8000/api/v1/projects/passman-main/files", {
+        headers: { "X-Tenant-ID": "default-tenant" }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setTree(data)
+      }
+    } catch (err) {
+      console.error("Failed to load project files", err)
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadProjectFiles()
+  }, [])
 
   return (
     <aside className="w-[220px] shrink-0 bg-[#202123] flex flex-col h-full text-[#ececec]">
@@ -68,30 +51,14 @@ export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenD
           <p className="text-[10px] uppercase tracking-widest text-[#8e8ea0] font-semibold px-1">
             Directory
           </p>
-          {rootName && (
-            <button
-              onClick={pickDirectory}
-              title="Change folder"
-              className="p-1 rounded hover:bg-white/10 text-[#8e8ea0] hover:text-[#ececec] transition-colors"
-            >
-              <RefreshCw size={11} />
-            </button>
-          )}
-        </div>
-
-        {/* Empty state */}
-        {!rootName && !loading && (
           <button
-            onClick={pickDirectory}
-            className="flex items-center gap-2 w-full border border-dashed border-white/15 rounded-lg px-3 py-3 hover:border-[#10a37f]/50 hover:bg-white/5 transition-colors group"
+            onClick={loadProjectFiles}
+            title="Refresh folder"
+            className="p-1 rounded hover:bg-white/10 text-[#8e8ea0] hover:text-[#ececec] transition-colors"
           >
-            <Folder size={15} className="text-[#8e8ea0] group-hover:text-[#10a37f] transition-colors shrink-0" />
-            <div className="text-left">
-              <p className="text-xs text-[#ececec]">Choose folder</p>
-              <p className="text-[10px] text-[#8e8ea0] mt-0.5">Browse your file system</p>
-            </div>
+            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
           </button>
-        )}
+        </div>
 
         {/* Loading spinner */}
         {loading && (
