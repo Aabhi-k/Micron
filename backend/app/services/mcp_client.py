@@ -7,13 +7,20 @@ logger = logging.getLogger("backend.services.mcp_client")
 
 def get_server_params():
     from mcp import StdioServerParameters
+    from pathlib import Path
+    
+    # Resolve the root repository path (two levels up from backend/app)
+    repo_root = str(Path(__file__).resolve().parent.parent.parent.parent)
+    env = os.environ.copy()
+    env["STORAGE_BASE"] = str(settings.STORAGE_BASE)
+    
+    # Inject repo root into PYTHONPATH so 'python -m mcp_server.server' works!
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
+
     return StdioServerParameters(
         command=settings.MCP_SERVER_COMMAND,
         args=settings.MCP_SERVER_ARGS,
-        env={
-            **os.environ,
-            "STORAGE_BASE": str(settings.STORAGE_BASE)
-        }
+        env=env
     )
 
 async def call_mcp_tool(tool_name: str, arguments: dict) -> str:

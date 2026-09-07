@@ -222,3 +222,70 @@ async def clone_project(
         if target_dir.exists():
             shutil.rmtree(target_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Git clone failed: {e.stderr}")
+
+
+@router.post("/ingest-legacy")
+async def run_legacy_ingestion():
+    from app.services.ingestion.legacy_indexer import run_indexer
+    
+    try:
+        await run_indexer()
+        return {"status": "success", "message": "Legacy indexer executed successfully."}
+    except Exception as e:
+        logger.error(f"Legacy ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SearchLegacyRequest(BaseModel):
+    query: str
+    authority_level: int = 3
+    top_k: int = 3
+
+@router.post("/search-legacy")
+async def search_legacy_index(req: SearchLegacyRequest):
+    import httpx
+    from qdrant_client.http import models
+
+    # 1. Embed the search query using Sentence Transformers
+    from app.services.embeddings import embedding_service
+    try:
+        query_vector, _ = await embedding_service.get_embedding(req.query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding Error: {str(e)}")
+
+    # 2. Search Qdrant with RBAC filtering
+    try:
+        from qdrant_client import QdrantClient
+        q_client = QdrantClient(url="http://localhost:6333")
+        
+        # Build the RBAC filter (only return files the user is authorized to see)
+        rbac_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="minimum_authority_level",
+                    range=models.Range(lte=req.authority_level)
+                )
+            ]
+        )
+        
+        search_result = q_client.query_points(
+            collection_name="codebase_index",
+            query=query_vector,
+            query_filter=rbac_filter,
+            limit=req.top_k,
+            with_payload=True
+        ).points
+        
+        return {
+            "status": "success",
+            "matches": [
+                {
+                    "score": hit.score,
+                    "file_name": hit.payload.get("file_name"),
+                    "functions": hit.payload.get("functions"),
+                    "authority_level": hit.payload.get("minimum_authority_level")
+                }
+                for hit in search_result
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Qdrant Search Error: {str(e)}")

@@ -24,25 +24,7 @@ from app.core.redis import ping_redis, close_redis
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
 logger = logging.getLogger("backend.main")
 
-class ChatRequest(BaseModel):
-    query: str
-    file_path: str
-    project_id: Optional[str] = None
 
-class ChatResponse(BaseModel):
-    markdown: str
-    sanitized_code: str
-    citations: List[str]
-    trace_id: str
-
-def mock_mcp_read_and_redact(file_path: str) -> str:
-    target_path = os.path.abspath(os.path.join(settings.STORAGE_BASE, file_path))
-    if not target_path.startswith(str(settings.STORAGE_BASE)):
-        raise HTTPException(status_code=403, detail="Forbidden: Path traversal")
-    return "def authenticate_user():\n    # [REDACTED_CREDENTIAL]\n    return True"
-
-def mock_rag_fetch_bpd(query: str, file_path: str) -> List[str]:
-    return ["BPD-402: All API modules must authenticate tokens before processing."]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -113,36 +95,7 @@ async def health_check():
         "reranker": settings.CROSS_ENCODER_MODEL
     }
 
-from app.services.rag_engine import search_business_docs
-from fastapi import Header
 
-# Compatibility endpoint for frontend chat generation
-@app.post("/api/v1/chat/generate", response_model=ChatResponse, tags=["Chat"])
-async def generate_chat(request: ChatRequest, x_tenant_id: str = Header(..., alias="X-Tenant-ID")):
-    sanitized_code = mock_mcp_read_and_redact(request.file_path)
-    
-    # Use Person B's actual Hybrid Retrieval Engine!
-    rag_results = await search_business_docs(
-        tenant_id=x_tenant_id,
-        query=request.query,
-        project_id=request.project_id,
-        top_k=3
-    )
-    
-    # Extract the chunk texts from the results
-    bpds = [res.get("content", "") for res in rag_results]
-    if not bpds:
-        bpds = ["No relevant internal documentation found for this query."]
-        
-    trace_id = str(uuid.uuid4())
-    markdown = f"# Legacy Documentation\n\n## Sanitized Context\n```python\n{sanitized_code}\n```\n\n## Applied Rules\n" + "\n---\n".join(bpds)
-    
-    return ChatResponse(
-        markdown=markdown,
-        sanitized_code=sanitized_code,
-        citations=bpds,
-        trace_id=trace_id
-    )
 
 if __name__ == "__main__":
     import uvicorn
