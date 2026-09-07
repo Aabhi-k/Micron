@@ -3,6 +3,9 @@ from sqlalchemy import String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin
 
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
+
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
 
@@ -11,8 +14,8 @@ class Project(Base, TimestampMixin):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
-    tenant_id: Mapped[str] = mapped_column(
-        String(64),
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True
