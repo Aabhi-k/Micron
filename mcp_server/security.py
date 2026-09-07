@@ -195,7 +195,7 @@ def validate_file_type_and_size(
     if not stat.S_ISREG(file_stat.st_mode):
         mode_desc = "directory" if stat.S_ISDIR(file_stat.st_mode) else "special device/pipe"
         raise FileTypeSecurityError(
-            f"Access Denied: Target is a {mode_desc}, only regular source files are permitted."
+            f"Access Denied: Target is a {mode_desc} (not a regular file), only regular source files are permitted."
         )
 
     # 2. Check blocked extensions
