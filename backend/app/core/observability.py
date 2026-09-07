@@ -7,12 +7,13 @@ from app.core.config import settings
 logger = logging.getLogger("backend.core.observability")
 
 # Sync settings into environment for Langfuse automatic client initialization
-if settings.LANGFUSE_PUBLIC_KEY and not os.getenv("LANGFUSE_PUBLIC_KEY"):
+if settings.LANGFUSE_PUBLIC_KEY:
     os.environ["LANGFUSE_PUBLIC_KEY"] = settings.LANGFUSE_PUBLIC_KEY
-if settings.LANGFUSE_SECRET_KEY and not os.getenv("LANGFUSE_SECRET_KEY"):
+if settings.LANGFUSE_SECRET_KEY:
     os.environ["LANGFUSE_SECRET_KEY"] = settings.LANGFUSE_SECRET_KEY
-if settings.LANGFUSE_HOST and not os.getenv("LANGFUSE_HOST"):
+if settings.LANGFUSE_HOST:
     os.environ["LANGFUSE_HOST"] = settings.LANGFUSE_HOST
+    os.environ["LANGFUSE_BASEURL"] = settings.LANGFUSE_HOST
 
 try:
     from langfuse import observe, propagate_attributes, Langfuse
@@ -65,3 +66,56 @@ def trace_tenant_context(
         metadata=meta
     ):
         yield
+
+
+def verify_langfuse_connection() -> Dict[str, Any]:
+    """
+    Verifies authentication and reachability with Langfuse Cloud.
+    Returns a status dict detailing connectivity and configuration.
+    """
+    if not LANGFUSE_AVAILABLE:
+        return {
+            "status": "error",
+            "message": "Langfuse package is not installed."
+        }
+
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY") or settings.LANGFUSE_PUBLIC_KEY
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY") or settings.LANGFUSE_SECRET_KEY
+    host = os.getenv("LANGFUSE_HOST") or settings.LANGFUSE_HOST or "https://cloud.langfuse.com"
+
+    if not public_key or not secret_key:
+        return {
+            "status": "unconfigured",
+            "message": "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY is empty. Tracing is disabled.",
+            "host": host
+        }
+
+    try:
+        client = Langfuse(public_key=public_key, secret_key=secret_key, host=host)
+        if hasattr(client, "auth_check"):
+            auth_ok = client.auth_check()
+            if auth_ok:
+                return {
+                    "status": "connected",
+                    "message": "Successfully authenticated with Langfuse Cloud.",
+                    "host": host,
+                    "public_key_prefix": public_key[:8] + "..." if len(public_key) > 8 else public_key
+                }
+            else:
+                return {
+                    "status": "failed",
+                    "message": "Authentication failed with Langfuse Cloud. Check your keys and host.",
+                    "host": host
+                }
+        return {
+            "status": "connected",
+            "message": "Langfuse client initialized.",
+            "host": host
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Connection error: {e}",
+            "host": host
+        }
+

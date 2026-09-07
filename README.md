@@ -118,6 +118,24 @@ docker compose up --build
 
 ---
 
+### 4. Observability (Langfuse Cloud)
+
+Micron natively tracks LLM completions, embeddings, MCP tool invocations, and multi-tenant RAG retrieval queries using **Langfuse Cloud**.
+
+1. Register at [cloud.langfuse.com](https://cloud.langfuse.com) (EU) or [us.cloud.langfuse.com](https://us.cloud.langfuse.com) (US).
+2. Generate API Keys in **Project Settings -> API Keys**.
+3. Set your keys in `.env`:
+   ```env
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com
+   ```
+4. Verify your setup with the automated check:
+   ```bash
+   python backend/verify_langfuse.py
+   ```
+
+
 ## API Endpoints (v1)
 
 | Method | Endpoint | Description |
