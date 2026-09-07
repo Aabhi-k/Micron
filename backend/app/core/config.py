@@ -53,9 +53,15 @@ class Settings(BaseSettings):
     RRF_K: int = 60
 
     # Observability (Langfuse Cloud)
-    LANGFUSE_PUBLIC_KEY: str = ""
-    LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "")
+    LANGFUSE_HOST: str = (
+        os.getenv("LANGFUSE_HOST")
+        or os.getenv("LANGFUSE_BASE_URL")
+        or os.getenv("LANGFUSE_BASEURL")
+        or "https://cloud.langfuse.com"
+    )
+
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
