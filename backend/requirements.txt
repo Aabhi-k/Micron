@@ -8,3 +8,4 @@ mcp
 langchain
 pydantic
 python-dotenv
+openai
