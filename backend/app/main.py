@@ -7,6 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from app.core.config import settings
+from app.api.v1 import api_v1_router
+from app.db.session import init_db, engine
+from app.services.qdrant_service import qdrant_service
 
 class ChatRequest(BaseModel):
     query: str
@@ -34,7 +37,23 @@ logger = logging.getLogger("backend.main")
 async def lifespan(app: FastAPI):
     logger.info("Initializing Micron Backend Orchestrator...")
     settings.STORAGE_BASE.mkdir(parents=True, exist_ok=True)
+
+    # 1. Initialize Relational DB schema (PostgreSQL + asyncpg)
+    await init_db()
+
+    # 2. Ensure Qdrant Vector Collection exists with isolated indexes
+    dim = 1536 if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("sk-placeholder") else 384
+    await qdrant_service.ensure_collection(settings.QDRANT_COLLECTION, vector_size=dim)
+
     yield
+
+    logger.info("Shutting down Micron Backend Orchestrator...")
+    await qdrant_service.close()
+    await engine.dispose()
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="Enterprise Legacy Code Documentation Platform (FastAPI + MCP + Hybrid Multi-Tenant RAG)",
     logger.info("Shutting down Micron Backend...")
 
 app = FastAPI(
@@ -54,9 +73,13 @@ app.add_middleware(
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {
-        "status": "ok", 
+        "status": "ok",
         "service": settings.APP_NAME,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "database": "postgresql+asyncpg",
+        "vector_db": "qdrant (async)",
+        "fusion": f"RRF (k={settings.RRF_K})",
+        "reranker": settings.CROSS_ENCODER_MODEL
     }
 
 @app.post("/api/v1/chat/generate", response_model=ChatResponse, tags=["Chat"])

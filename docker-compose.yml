@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # Primary Relational Database (PostgreSQL 16)
+  postgres:
+    image: postgres:16-alpine
+    container_name: micron-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=micron
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # Vector Database for Business Process Documents
   vector-db:
     image: qdrant/qdrant:latest
@@ -37,17 +56,23 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/micron
       - STORAGE_BASE=/data/nexsolve/projects
       - VECTOR_STORE_DIR=/data/nexsolve/vector_store
       - QDRANT_HOST=vector-db
       - QDRANT_PORT=6333
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - RRF_K=60
     volumes:
       - ./storage/projects:/data/nexsolve/projects
       - ./vector_store:/data/nexsolve/vector_store
     depends_on:
-      - vector-db
+      postgres:
+        condition: service_healthy
+      vector-db:
+        condition: service_started
     restart: unless-stopped
 
   # Web / React Frontend UI
@@ -65,5 +90,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   qdrant_storage:
   vector_store:
