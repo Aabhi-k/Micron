@@ -64,6 +64,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Could not reach Redis cache/broker at startup.")
 
+    # 4. Auto-ingest Passman BPD specification if present
+    try:
+        from app.db.session import async_session_factory
+        from app.services.ingestion.auto_ingest import auto_ingest_passman_bpd
+        async with async_session_factory() as session:
+            await auto_ingest_passman_bpd(session)
+    except Exception as ai_err:
+        logger.warning(f"Passman BPD auto-ingest deferred: {ai_err}")
+
     yield
 
     logger.info("Shutting down Micron Backend Orchestrator...")
@@ -132,13 +141,6 @@ async def generate_chat(request: ChatRequest, x_tenant_id: str = Header(..., ali
         citations=bpds,
         trace_id=trace_id
     )
-
-# Mount Person A's File Upload Ingestion Router and Person B's RAG Router
-from app.api.v1.endpoints.documents import router as upload_router
-from app.api.v1.endpoints.rag import router as rag_router
-
-app.include_router(upload_router, prefix="/api/v1")
-app.include_router(rag_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
