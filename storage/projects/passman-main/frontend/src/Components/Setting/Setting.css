@@ -1,0 +1,426 @@
+.settings-container {
+  margin: 0 auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(rgba(18, 18, 20, 0.8), rgba(18, 18, 20, 0.9)), url('../../assets/dashboardBg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #e0e0e0;
+}
+.settings{
+  padding: 2rem 4rem;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: none;
+}
+
+.logo-container img {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.logo-container img:hover {
+  opacity: 0.9;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.back-to-dashboard-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.back-to-dashboard-btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.back-to-dashboard-btn:before {
+  content: "←";
+  font-weight: bold;
+}
+
+.settings-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.settings-card {
+  background-color: rgba(30, 30, 34, 0.8);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s;
+  animation: fadeUp 0.4s ease-out;
+}
+
+.settings-card-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-card-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+.edit-profile-btn {
+  background-color: #81c995;
+  color: #121214;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.edit-profile-btn:hover {
+  background-color: #6db17f;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.settings-error-message {
+  background-color: rgba(183, 28, 28, 0.2);
+  color: #f48fb1;
+  padding: 12px 24px;
+  margin: 16px 24px;
+  border-radius: 6px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(183, 28, 28, 0.3);
+}
+
+.settings-loading {
+  padding: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.spinner {
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top: 3px solid #81c995;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+}
+
+.spinner-small {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top: 2px solid #81c995;
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.settings-form {
+  padding: 20px 24px;
+}
+
+.settings-section {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settings-section h3 {
+  font-size: 1.1rem;
+  color: #81c995;
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.form-group {
+  margin-bottom: 16px;
+  animation: fadeUp 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: #a0a0a0;
+  font-size: 0.9rem;
+}
+
+.settings-value {
+  font-size: 1rem;
+  padding: 8px 0;
+  color: #e0e0e0;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: all 0.2s;
+  background-color: rgba(30, 30, 34, 0.6);
+  color: #e0e0e0;
+  box-sizing: border-box;
+}
+
+.settings-input:focus {
+  border-color: #81c995;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(129, 201, 149, 0.2);
+  background-color: rgba(40, 40, 44, 0.8);
+}
+
+.settings-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.save-btn, .cancel-btn, .change-password-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-btn {
+  background-color: #81c995;
+  color: #121214;
+  border: none;
+}
+
+.save-btn:hover:not(:disabled) {
+  background-color: #6db17f;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.cancel-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #a0a0a0;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.change-password-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #81c995;
+  padding: 10px 16px;
+}
+
+.change-password-btn:hover:not(:disabled) {
+  background-color: rgba(129, 201, 149, 0.2);
+  border-color: rgba(129, 201, 149, 0.4);
+}
+
+.button-spinner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logout-btn, .delete-account-btn {
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.logout-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e0e0e0;
+}
+
+.logout-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.delete-account-btn {
+  background-color: rgba(183, 28, 28, 0.2);
+  border: 1px solid rgba(183, 28, 28, 0.3);
+  color: #f48fb1;
+}
+
+.delete-account-btn:hover {
+  background-color: rgba(183, 28, 28, 0.3);
+}
+
+/* Toast notification (reused from Dashboard.css) */
+.success-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  animation: toastFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+             toastFadeOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) 2.7s forwards;
+}
+
+.toast-content {
+  background-color: rgba(18, 18, 20, 0.95);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 3px 15px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toast-icon {
+  color: #81c995;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.toast-message {
+  font-weight: 500;
+}
+
+@keyframes toastFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes toastFadeOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+}
+
+@keyframes fadeUp {
+  from { 
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .settings-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .settings-actions {
+    width: 100%;
+  }
+  
+  .back-to-dashboard-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .settings-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .edit-profile-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 576px) {
+  .settings-container {
+    padding: 15px;
+  }
+  
+  .settings-content {
+    padding: 10px 0;
+  }
+  
+  .settings-card-header {
+    padding: 15px;
+  }
+  
+  .settings-form {
+    padding: 15px;
+  }
+  
+  .settings-actions-row {
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
+  
+  .save-btn, .cancel-btn, .change-password-btn {
+    width: 100%;
+  }
+}

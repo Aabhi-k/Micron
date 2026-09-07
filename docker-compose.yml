@@ -1,0 +1,126 @@
+services:
+  # Primary Relational Database (PostgreSQL 16)
+  postgres:
+    image: postgres:16-alpine
+    container_name: micron-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=micron
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Vector Database for Business Process Documents
+  vector-db:
+    image: qdrant/qdrant:latest
+    container_name: micron-vector-db
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:z
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+
+  # In-Memory Cache & Message Broker (Redis 7)
+  redis:
+    image: redis:7-alpine
+    container_name: micron-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Web GUI (RedisInsight)
+  redis-ui:
+    image: redis/redisinsight:latest
+    container_name: micron-redis-ui
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Sandboxed MCP Server (Isolated AST Extraction)
+  mcp-server:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile.mcp
+    container_name: micron-mcp-server
+    environment:
+      - STORAGE_BASE=/data/nexsolve/projects
+    volumes:
+      - ./storage/projects:/data/nexsolve/projects:ro
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # FastAPI Backend Orchestrator
+  backend:
+    profiles: ["app"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: micron-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/micron
+      - STORAGE_BASE=/data/nexsolve/projects
+      - VECTOR_STORE_DIR=/data/nexsolve/vector_store
+      - QDRANT_HOST=vector-db
+      - QDRANT_PORT=6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - RRF_K=60
+    volumes:
+      - ./storage/projects:/data/nexsolve/projects
+      - ./vector_store:/data/nexsolve/vector_store
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vector-db:
+        condition: service_started
+    restart: unless-stopped
+
+  # Web / React Frontend UI
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: micron-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_storage:
+  vector_store:
+  redis_data:
+  redisinsight_data:
