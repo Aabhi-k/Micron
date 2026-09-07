@@ -25,11 +25,12 @@ def test_tenant_filter_and_select():
     """Test SQLAlchemy query filter scoping."""
     expr = tenant_filter(BusinessDocument, "tenant-alpha")
     # Verify the expression is compiled with the tenant_id check
-    assert "business_documents.tenant_id =" in str(expr)
+    tbl = BusinessDocument.__tablename__
+    assert f"{tbl}.tenant_id =" in str(expr)
 
     stmt = tenant_select(BusinessDocument, "tenant-alpha")
     sql_str = str(stmt)
-    assert "WHERE business_documents.tenant_id = :tenant_id_1" in sql_str
+    assert f"WHERE {tbl}.tenant_id = :tenant_id_1" in sql_str
 
     # Test error when model lacks tenant_id
     with pytest.raises(TenantIsolationError, match="does not have a 'tenant_id' column"):
