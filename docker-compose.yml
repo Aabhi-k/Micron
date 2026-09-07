@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Primary Relational Database (PostgreSQL 16)
   postgres:
@@ -33,8 +31,37 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
 
+  # In-Memory Cache & Message Broker (Redis 7)
+  redis:
+    image: redis:7-alpine
+    container_name: micron-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Web GUI (RedisInsight)
+  redis-ui:
+    image: redis/redisinsight:latest
+    container_name: micron-redis-ui
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Sandboxed MCP Server (Isolated AST Extraction)
   mcp-server:
+    profiles: ["app"]
     build:
       context: .
       dockerfile: mcp_server/Dockerfile.mcp
@@ -49,6 +76,7 @@ services:
 
   # FastAPI Backend Orchestrator
   backend:
+    profiles: ["app"]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -77,6 +105,7 @@ services:
 
   # Web / React Frontend UI
   frontend:
+    profiles: ["app"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -93,3 +122,5 @@ volumes:
   postgres_data:
   qdrant_storage:
   vector_store:
+  redis_data:
+  redisinsight_data:
