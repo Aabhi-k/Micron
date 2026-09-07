@@ -1,61 +1,46 @@
 import logging
 from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
-    AsyncSession,
-    AsyncEngine
-)
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.core.config import settings
 from app.db.base import Base
 
 logger = logging.getLogger("backend.db.session")
 
-# Database URL normalization for asyncpg
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-engine: AsyncEngine = create_async_engine(
-    db_url,
-    echo=False,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=(settings.LOG_LEVEL.upper() == "DEBUG"),
+    future=True,
+    pool_pre_ping=True
 )
 
-async_session_factory = async_sessionmaker(
+AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False,
+    autoflush=False
 )
 
+# Alias for compatibility
+async_session_factory = AsyncSessionLocal
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency yielding an isolated async database session."""
-    async with async_session_factory() as session:
+    """FastAPI dependency yielding tenant-aware database session."""
+    async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+        finally:
+            await session.close()
 
-async def init_db(custom_engine: AsyncEngine = None) -> bool:
-    """Initializes schema tables asynchronously during application startup."""
-    active_engine = custom_engine or engine
-    logger.info("Initializing relational database schema...")
+async def init_db():
+    """Initializes schema and tables if database is available."""
     try:
-        async with active_engine.begin() as conn:
-            # Import models so they are registered on Base.metadata
-            import app.models  # noqa: F401
+        async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema initialized successfully.")
-        return True
+        logger.info("Database tables verified and initialized successfully.")
     except Exception as e:
         logger.warning(
-            f"Database initialization deferred: {e}. "
-            "Ensure PostgreSQL container is running."
+            f"Database connectivity check failed: {e}. "
+            "Backend will operate in fallback mode until PostgreSQL is available."
         )
-        return False

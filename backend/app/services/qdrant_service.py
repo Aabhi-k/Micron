@@ -1,49 +1,37 @@
 import logging
-import uuid
 from typing import List, Dict, Any, Optional
+from qdrant_client import AsyncQdrantClient, models
 from app.core.config import settings
 from app.db.tenant_guard import validate_tenant_id, TenantIsolationError
 
-logger = logging.getLogger("backend.services.qdrant")
+logger = logging.getLogger("backend.services.qdrant_service")
 
 class QdrantService:
-    """Asynchronous Qdrant client manager enforcing strict tenant isolation."""
+    """Async Qdrant vector store service with strict tenant isolation enforcement."""
 
-    def __init__(self):
-        self._client = None
+    def __init__(self, host: Optional[str] = None, port: Optional[int] = None):
+        self.host = host or settings.QDRANT_HOST
+        self.port = port or settings.QDRANT_PORT
+        self._client: Optional[AsyncQdrantClient] = None
         self._initialized_collections = set()
 
-    async def get_client(self):
-        """Lazily initialize the AsyncQdrantClient."""
+    def get_client(self) -> AsyncQdrantClient:
         if self._client is None:
-            try:
-                from qdrant_client import AsyncQdrantClient
-                self._client = AsyncQdrantClient(
-                    host=settings.QDRANT_HOST,
-                    port=settings.QDRANT_PORT,
-                    timeout=10.0
-                )
-            except Exception as e:
-                logger.warning(f"Failed to instantiate AsyncQdrantClient: {e}")
-                return None
+            self._client = AsyncQdrantClient(host=self.host, port=self.port, timeout=10)
         return self._client
 
-    async def ensure_collection(self, collection_name: str, vector_size: int = 1536) -> bool:
-        """Ensures collection exists with proper vector size, distance metric, and payload indexes."""
-        client = await self.get_client()
-        if client is None:
-            return False
+    async def close(self):
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
 
-        cache_key = f"{collection_name}:{vector_size}"
-        if cache_key in self._initialized_collections:
-            return True
-
+    async def ensure_collection(self, collection_name: str, vector_size: int = 1536):
+        """Idempotently create collection with cosine similarity."""
+        client = self.get_client()
         try:
-            from qdrant_client.http import models
-
-            exists = await client.collection_exists(collection_name=collection_name)
-            if not exists:
-                logger.info(f"Creating Qdrant collection '{collection_name}' with vector size {vector_size}...")
+            collections = await client.get_collections()
+            existing = [c.name for c in collections.collections]
+            if collection_name not in existing:
                 await client.create_collection(
                     collection_name=collection_name,
                     vectors_config=models.VectorParams(
@@ -51,176 +39,115 @@ class QdrantService:
                         distance=models.Distance.COSINE
                     )
                 )
-
-            # Ensure payload keyword index on tenant_id for high-performance isolated filtering
-            try:
                 await client.create_payload_index(
                     collection_name=collection_name,
                     field_name="tenant_id",
                     field_schema=models.PayloadSchemaType.KEYWORD
                 )
-                await client.create_payload_index(
-                    collection_name=collection_name,
-                    field_name="project_id",
-                    field_schema=models.PayloadSchemaType.KEYWORD
-                )
-            except Exception:
-                pass  # Index may already exist
-
-            self._initialized_collections.add(cache_key)
-            return True
+                logger.info(f"Created Qdrant collection '{collection_name}' (vector size: {vector_size}).")
+            self._initialized_collections.add(collection_name)
         except Exception as e:
-            logger.warning(f"Error ensuring Qdrant collection '{collection_name}': {e}")
-            return False
+            logger.warning(f"Failed to verify/create Qdrant collection '{collection_name}': {e}")
 
-    async def upsert_document(
+    async def upsert_documents(
         self,
         tenant_id: str,
-        document_id: str,
-        vector: List[float],
-        content: str,
-        title: str = "",
-        project_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        collection_name: Optional[str] = None
-    ) -> bool:
-        """Upserts a document vector with mandatory tenant_id in the payload."""
+        collection_name: str,
+        points: List[Dict[str, Any]]
+    ):
+        """Upsert documents enforcing that payload contains matching tenant_id."""
         clean_tenant_id = validate_tenant_id(tenant_id)
-        coll = collection_name or settings.QDRANT_COLLECTION
+        client = self.get_client()
 
-        client = await self.get_client()
-        if client is None:
-            logger.warning("Qdrant client not available; skipping vector upsert.")
-            return False
-
-        await self.ensure_collection(coll, vector_size=len(vector))
+        qdrant_points = []
+        for p in points:
+            payload = p.get("payload", {}).copy()
+            payload["tenant_id"] = clean_tenant_id
+            qdrant_points.append(
+                models.PointStruct(
+                    id=p["id"],
+                    vector=p["vector"],
+                    payload=payload
+                )
+            )
 
         try:
-            from qdrant_client.http import models
-
-            # Generate consistent point ID
-            try:
-                point_id = str(uuid.UUID(document_id))
-            except (ValueError, AttributeError):
-                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{clean_tenant_id}:{document_id}"))
-
-            payload = {
-                "tenant_id": clean_tenant_id,
-                "project_id": str(project_id) if project_id else "",
-                "doc_id": str(document_id),
-                "title": title,
-                "content": content,
-                "metadata": metadata or {}
-            }
-
-            point = models.PointStruct(
-                id=point_id,
-                vector=vector,
-                payload=payload
-            )
-
             await client.upsert(
-                collection_name=coll,
-                points=[point]
+                collection_name=collection_name,
+                points=qdrant_points
             )
-            return True
         except Exception as e:
-            logger.error(f"Error upserting vector for document {document_id}: {e}")
-            return False
+            logger.error(f"Error upserting vectors into Qdrant for tenant {clean_tenant_id}: {e}")
+            raise
 
     async def search(
         self,
         tenant_id: str,
         query_vector: List[float],
-        top_k: int = 10,
         project_id: Optional[str] = None,
-        collection_name: Optional[str] = None
+        collection_name: Optional[str] = None,
+        top_k: int = 10,
+        limit: Optional[int] = None,
+        extra_filter: Optional[models.Filter] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Executes vector similarity search with HARD tenant metadata isolation.
-        Under NO circumstance will queries without matching tenant_id return data.
-        """
+        """Perform vector similarity search strictly filtered by tenant_id and optional project_id."""
         clean_tenant_id = validate_tenant_id(tenant_id)
-        coll = collection_name or settings.QDRANT_COLLECTION
+        collection = collection_name or settings.QDRANT_COLLECTION
+        client = self.get_client()
+        effective_limit = limit if limit is not None else top_k
 
-        client = await self.get_client()
-        if client is None:
-            logger.warning("Qdrant client unavailable; returning empty search results.")
-            return []
+        # Hard tenant isolation filter
+        tenant_condition = models.FieldCondition(
+            key="tenant_id",
+            match=models.MatchValue(value=clean_tenant_id)
+        )
+
+        must_conditions = [tenant_condition]
+        if project_id:
+            must_conditions.append(
+                models.FieldCondition(
+                    key="project_id",
+                    match=models.MatchValue(value=str(project_id))
+                )
+            )
+
+        if extra_filter and extra_filter.must:
+            must_conditions.extend(extra_filter.must)
+
+        strict_filter = models.Filter(must=must_conditions)
 
         try:
-            from qdrant_client.http import models
+            hits = await client.search(
+                collection_name=collection,
+                query_vector=query_vector,
+                query_filter=strict_filter,
+                limit=effective_limit
+            )
 
-            must_conditions = [
-                models.FieldCondition(
-                    key="tenant_id",
-                    match=models.MatchValue(value=clean_tenant_id)
-                )
-            ]
+            results = []
+            for hit in hits:
+                payload = hit.payload or {}
+                # Defense-in-depth: discard point if payload tenant_id does not match
+                if str(payload.get("tenant_id", clean_tenant_id)) != clean_tenant_id:
+                    continue
+                if project_id and str(payload.get("project_id", "")) != str(project_id):
+                    continue
 
-            if project_id:
-                must_conditions.append(
-                    models.FieldCondition(
-                        key="project_id",
-                        match=models.MatchValue(value=str(project_id))
-                    )
-                )
-
-            tenant_filter = models.Filter(must=must_conditions)
-
-            # Perform isolated vector search
-            if hasattr(client, "search"):
-                results = await client.search(
-                    collection_name=coll,
-                    query_vector=query_vector,
-                    query_filter=tenant_filter,
-                    limit=top_k,
-                    with_payload=True
-                )
-            else:
-                response = await client.query_points(
-                    collection_name=coll,
-                    query=query_vector,
-                    query_filter=tenant_filter,
-                    limit=top_k,
-                    with_payload=True
-                )
-                results = response.points
-
-            records = []
-            for hit in results:
-                payload = getattr(hit, "payload", {}) or {}
-                # Defense-in-depth: assert matching tenant_id and project_id (if specified)
-                matches_tenant = (payload.get("tenant_id") == clean_tenant_id)
-                matches_project = (not project_id or str(payload.get("project_id") or "") == str(project_id))
-                if matches_tenant and matches_project:
-                    records.append({
-                        "doc_id": payload.get("doc_id", str(hit.id)),
-                        "score": float(hit.score),
-                        "title": payload.get("title", ""),
-                        "content": payload.get("content", ""),
-                        "project_id": payload.get("project_id"),
-                        "metadata": payload.get("metadata", {})
-                    })
-                elif not matches_tenant:
-                    logger.critical(
-                        f"CRITICAL: Tenant isolation breach prevented! "
-                        f"Expected {clean_tenant_id}, got {payload.get('tenant_id')}"
-                    )
-                else:
-                    logger.warning(
-                        f"Project isolation dropped rogue point: expected {project_id}, got {payload.get('project_id')}"
-                    )
-            return records
-
+                doc_id = str(payload.get("doc_id") or payload.get("document_id") or hit.id)
+                results.append({
+                    "id": hit.id,
+                    "doc_id": doc_id,
+                    "score": hit.score,
+                    "title": payload.get("title", ""),
+                    "content": payload.get("content", ""),
+                    "project_id": payload.get("project_id"),
+                    "payload": payload
+                })
+            return results
         except Exception as e:
-            logger.warning(f"Vector search failed or collection '{coll}' not found: {e}")
+            logger.warning(f"Qdrant search error for tenant {clean_tenant_id}: {e}")
             return []
 
-    async def close(self):
-        """Closes the underlying client connection."""
-        if self._client is not None:
-            await self._client.close()
-            self._client = None
 
+# Global singleton
 qdrant_service = QdrantService()
