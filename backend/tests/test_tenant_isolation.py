@@ -132,3 +132,114 @@ async def test_bm25_cross_tenant_isolation():
     # Querying without tenant_id must raise
     with pytest.raises(TenantIsolationError):
         await bm25.search("", query="Critical procedure")
+
+
+@pytest.mark.asyncio
+async def test_hybrid_retrieval_strict_tenant_isolation():
+    """
+    End-to-end multi-tenant isolation test:
+    a. Mock or insert DocumentChunks for tenant_alpha ("Alpha project roadmap: Q4 delivery")
+       and tenant_beta ("Beta quarterly revenue is 5 million").
+    b. Call hybrid_retrieval with query="What is the quarterly revenue?" under tenant_alpha.
+    c. Assert that results returned under tenant_alpha contain ZERO mentions of tenant_beta revenue or data.
+    d. Assert that empty/missing tenant_id raises an error.
+    """
+    from app.services.retrieval.hybrid_search import hybrid_retrieval
+    from app.services.bm25_search import bm25_service
+
+    # d. Assert that empty/missing tenant_id raises ValueError / TenantIsolationError
+    with pytest.raises((ValueError, TenantIsolationError)):
+        await hybrid_retrieval("query", tenant_id="")
+
+    with pytest.raises((ValueError, TenantIsolationError)):
+        await hybrid_retrieval("query", tenant_id="   ")
+
+    with pytest.raises((ValueError, TenantIsolationError)):
+        await hybrid_retrieval("query", tenant_id=None)
+
+    # a. Set up chunks for tenant_alpha and tenant_beta in BM25
+    bm25_service.update_tenant_index("tenant_alpha", [
+        {
+            "id": "chunk_alpha_1",
+            "doc_id": "doc_alpha_1",
+            "tenant_id": "tenant_alpha",
+            "content": "Alpha project roadmap: Q4 delivery"
+        }
+    ])
+    bm25_service.update_tenant_index("tenant_beta", [
+        {
+            "id": "chunk_beta_1",
+            "doc_id": "doc_beta_1",
+            "tenant_id": "tenant_beta",
+            "content": "Beta quarterly revenue is 5 million"
+        }
+    ])
+
+    # Mock Qdrant client to simulate vector DB responses
+    mock_point_alpha = MagicMock()
+    mock_point_alpha.id = "chunk_alpha_1"
+    mock_point_alpha.score = 0.88
+    mock_point_alpha.payload = {
+        "tenant_id": "tenant_alpha",
+        "document_id": "doc_alpha_1",
+        "content": "Alpha project roadmap: Q4 delivery"
+    }
+
+    mock_qdrant_client = AsyncMock()
+    mock_qdrant_client.collection_exists.return_value = True
+    mock_qdrant_client.query_points.return_value = MagicMock(points=[mock_point_alpha])
+
+    with patch("app.services.retrieval.hybrid_search.get_qdrant_client", return_value=mock_qdrant_client):
+        # b. Call hybrid_retrieval with query="What is the quarterly revenue?" under tenant_alpha
+        results = await hybrid_retrieval(
+            query="What is the quarterly revenue?",
+            tenant_id="tenant_alpha",
+            top_k=5
+        )
+
+        # c. Assert that results returned under tenant_alpha contain ZERO mentions of tenant_beta revenue or data
+        all_returned_content = " ".join([r.get("content", "") for r in results]).lower()
+        assert "beta" not in all_returned_content
+        assert "5 million" not in all_returned_content
+        assert "quarterly revenue is 5 million" not in all_returned_content
+        for r in results:
+            assert r["tenant_id"] == "tenant_alpha"
+
+
+@pytest.mark.asyncio
+async def test_rag_api_endpoint_isolation():
+    """Verify POST /rag/search strictly enforces X-Tenant-ID header."""
+    from fastapi import FastAPI
+    from httpx import AsyncClient, ASGITransport
+    from app.api.v1.endpoints.rag import router as rag_router
+
+    test_app = FastAPI()
+    test_app.include_router(rag_router)
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+        # Missing header -> 422
+        resp_missing = await client.post("/rag/search", json={"query": "test query"})
+        assert resp_missing.status_code == 422
+
+        # Empty header -> 400
+        resp_empty = await client.post(
+            "/rag/search",
+            headers={"X-Tenant-ID": ""},
+            json={"query": "test query"}
+        )
+        assert resp_empty.status_code == 400
+
+        # Valid header -> 200
+        with patch("app.api.v1.endpoints.rag.hybrid_retrieval", return_value=[
+            {"chunk_id": "c1", "document_id": "d1", "content": "Alpha text", "score": 0.95, "tenant_id": "tenant_alpha"}
+        ]):
+            resp_valid = await client.post(
+                "/rag/search",
+                headers={"X-Tenant-ID": "tenant_alpha"},
+                json={"query": "Alpha delivery", "top_k": 3}
+            )
+            assert resp_valid.status_code == 200
+            data = resp_valid.json()
+            assert len(data["results"]) == 1
+            assert data["results"][0]["content"] == "Alpha text"
+            assert "latency_ms" in data
