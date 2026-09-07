@@ -33,7 +33,8 @@ async def search_rag(
         raw_results = await hybrid_retrieval(
             query=request.query,
             tenant_id=x_tenant_id,
-            top_k=request.top_k
+            top_k=request.top_k,
+            project_id=request.project_id
         )
     except ValueError as e:
         raise HTTPException(
@@ -54,7 +55,8 @@ async def search_rag(
             chunk_id=str(item.get("chunk_id", "")),
             document_id=str(item.get("document_id", "")),
             content=str(item.get("content", "")),
-            score=float(item.get("score", 0.0))
+            score=float(item.get("score", 0.0)),
+            project_id=item.get("project_id")
         )
         for item in raw_results
     ]

@@ -190,8 +190,10 @@ class QdrantService:
             records = []
             for hit in results:
                 payload = getattr(hit, "payload", {}) or {}
-                # Defense-in-depth: assert matching tenant_id
-                if payload.get("tenant_id") == clean_tenant_id:
+                # Defense-in-depth: assert matching tenant_id and project_id (if specified)
+                matches_tenant = (payload.get("tenant_id") == clean_tenant_id)
+                matches_project = (not project_id or str(payload.get("project_id") or "") == str(project_id))
+                if matches_tenant and matches_project:
                     records.append({
                         "doc_id": payload.get("doc_id", str(hit.id)),
                         "score": float(hit.score),
@@ -200,10 +202,14 @@ class QdrantService:
                         "project_id": payload.get("project_id"),
                         "metadata": payload.get("metadata", {})
                     })
-                else:
+                elif not matches_tenant:
                     logger.critical(
                         f"CRITICAL: Tenant isolation breach prevented! "
                         f"Expected {clean_tenant_id}, got {payload.get('tenant_id')}"
+                    )
+                else:
+                    logger.warning(
+                        f"Project isolation dropped rogue point: expected {project_id}, got {payload.get('project_id')}"
                     )
             return records
 

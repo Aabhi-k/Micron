@@ -72,7 +72,7 @@ class BM25SearchService:
             active_docs = [
                 d for d in corpus_docs
                 if str(d.get("tenant_id", clean_tenant_id)) == clean_tenant_id
-                and (not project_id or not d.get("project_id") or str(d.get("project_id")) == str(project_id))
+                and (not project_id or str(d.get("project_id") or "") == str(project_id))
             ]
         else:
             cached = self._tenant_indices.get(clean_tenant_id)
@@ -80,7 +80,7 @@ class BM25SearchService:
                 return []
             active_docs = [
                 d for d in cached["docs"]
-                if not project_id or not d.get("project_id") or str(d.get("project_id")) == str(project_id)
+                if not project_id or str(d.get("project_id") or "") == str(project_id)
             ]
 
         if not active_docs:
