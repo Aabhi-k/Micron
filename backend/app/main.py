@@ -27,6 +27,7 @@ logger = logging.getLogger("backend.main")
 class ChatRequest(BaseModel):
     query: str
     file_path: str
+    project_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     markdown: str
@@ -124,6 +125,7 @@ async def generate_chat(request: ChatRequest, x_tenant_id: str = Header(..., ali
     rag_results = await search_business_docs(
         tenant_id=x_tenant_id,
         query=request.query,
+        project_id=request.project_id,
         top_k=3
     )
     

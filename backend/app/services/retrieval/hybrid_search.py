@@ -16,13 +16,14 @@ _reranker_service = ReRankingService()
 async def hybrid_retrieval(
     query: str, 
     tenant_id: str, 
-    top_k: int = 5
+    top_k: int = 5,
+    project_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
-    Executes an enterprise-grade multi-stage hybrid retrieval strictly isolated to tenant_id:
+    Executes an enterprise-grade multi-stage hybrid retrieval strictly isolated to tenant_id and optional project_id:
     1. Hard Isolation Validation: Reject missing, empty, or whitespace-only tenant_id.
-    2. Dense Vector Search: Qdrant vector search with mandatory tenant_id payload filter (top 25).
-    3. Sparse BM25 Search: BM25 keyword search strictly isolated to tenant chunks (top 25).
+    2. Dense Vector Search: Qdrant vector search with mandatory tenant_id and optional project_id filter (top 25).
+    3. Sparse BM25 Search: BM25 keyword search strictly isolated to tenant and project chunks (top 25).
     4. Reciprocal Rank Fusion (RRF): Merge rankings using RRF with constant k=60 (top 20).
     5. Cross-Encoder Re-ranking: Score candidates using cross-encoder/ms-marco-MiniLM-L-6-v2 (top_k).
     """
@@ -45,14 +46,21 @@ async def hybrid_retrieval(
         client = get_qdrant_client()
         query_vector, _ = await embedding_service.get_embedding(clean_query)
 
-        tenant_filter = models.Filter(
-            must=[
+        must_conditions = [
+            models.FieldCondition(
+                key="tenant_id",
+                match=models.MatchValue(value=clean_tenant_id)
+            )
+        ]
+        if project_id:
+            must_conditions.append(
                 models.FieldCondition(
-                    key="tenant_id",
-                    match=models.MatchValue(value=clean_tenant_id)
+                    key="project_id",
+                    match=models.MatchValue(value=str(project_id))
                 )
-            ]
-        )
+            )
+
+        tenant_filter = models.Filter(must=must_conditions)
 
         collection_to_search = COLLECTION_NAME
         # Verify collection exists before querying
@@ -92,6 +100,9 @@ async def hybrid_retrieval(
                 # Defense-in-depth: discard point if tenant_id doesn't match
                 if str(payload.get("tenant_id", clean_tenant_id)) != clean_tenant_id:
                     continue
+                # Defense-in-depth: discard point if project_id specified and doesn't match
+                if project_id and str(payload.get("project_id", "")) != str(project_id):
+                    continue
 
                 chunk_id = str(pt.id)
                 doc_id = str(payload.get("document_id") or chunk_id)
@@ -103,7 +114,8 @@ async def hybrid_retrieval(
                     "document_id": doc_id,
                     "content": content,
                     "score": score,
-                    "tenant_id": clean_tenant_id
+                    "tenant_id": clean_tenant_id,
+                    "project_id": payload.get("project_id")
                 })
         else:
             logger.warning(f"Qdrant collection '{collection_to_search}' not found for dense search.")
@@ -117,17 +129,23 @@ async def hybrid_retrieval(
         bm25_raw_results = await bm25_service.search(
             tenant_id=clean_tenant_id,
             query=clean_query,
-            top_k=25
+            top_k=25,
+            project_id=project_id
         )
         for doc in bm25_raw_results:
             chunk_id = str(doc.get("chunk_id") or doc.get("doc_id") or doc.get("id"))
             doc_id = str(doc.get("document_id") or doc.get("doc_id") or chunk_id)
+            doc_proj = doc.get("project_id")
+            if project_id and str(doc_proj or "") != str(project_id):
+                continue
+
             sparse_candidates.append({
                 "chunk_id": chunk_id,
                 "document_id": doc_id,
                 "content": str(doc.get("content", "")),
                 "score": float(doc.get("score", 0.0)),
-                "tenant_id": clean_tenant_id
+                "tenant_id": clean_tenant_id,
+                "project_id": doc_proj
             })
     except Exception as e:
         logger.warning(f"BM25 sparse search failed: {e}")
@@ -178,7 +196,8 @@ async def hybrid_retrieval(
             "document_id": item["document_id"],
             "content": item["content"],
             "score": score,
-            "tenant_id": item["tenant_id"]
+            "tenant_id": item["tenant_id"],
+            "project_id": item.get("project_id")
         })
 
     return output_chunks

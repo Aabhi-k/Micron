@@ -155,6 +155,25 @@ async def query_business_docs(
 
     clean_tenant_id = validate_tenant_id(tenant_id)
 
+    try:
+        from app.services.retrieval.hybrid_search import hybrid_retrieval
+        hybrid_results = await hybrid_retrieval(
+            query=query,
+            tenant_id=clean_tenant_id,
+            top_k=top_k,
+            project_id=project_id
+        )
+        if hybrid_results:
+            sections = []
+            for r in hybrid_results:
+                title = r.get("title", "Authoritative Specification")
+                content = r.get("content", "").strip()
+                score = r.get("score", 0.0)
+                sections.append(f"### {title} (Relevance Score: {score:.4f})\n{content}")
+            return "\n\n---\n\n".join(sections)
+    except Exception as h_err:
+        logger.debug(f"Hybrid retrieval in query_business_docs fallback note: {h_err}")
+
     results = await search_business_docs(
         tenant_id=clean_tenant_id,
         query=query,

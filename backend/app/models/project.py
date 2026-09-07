@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
+    from app.models.document import Document
 
 class Project(Base, TimestampMixin):
     """Target codebase project belonging to a specific tenant."""
@@ -26,6 +27,7 @@ class Project(Base, TimestampMixin):
 
     # Relationships
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="projects")
+    documents = relationship("Document", back_populates="project", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Project id={self.id!r} tenant_id={self.tenant_id!r} name={self.name!r}>"

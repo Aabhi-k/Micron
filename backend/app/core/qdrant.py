@@ -59,7 +59,18 @@ async def init_qdrant_collection(
             )
             logger.info(f"Payload index for 'tenant_id' verified on '{collection_name}'.")
         except Exception as idx_err:
-            logger.debug(f"Payload index status: {idx_err}")
+            logger.debug(f"Payload index status (tenant_id): {idx_err}")
+
+        # Create payload index for project_id for multi-project isolation
+        try:
+            await client.create_payload_index(
+                collection_name=collection_name,
+                field_name="project_id",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+            logger.info(f"Payload index for 'project_id' verified on '{collection_name}'.")
+        except Exception as idx_err:
+            logger.debug(f"Payload index status (project_id): {idx_err}")
 
     except Exception as e:
         logger.error(f"Failed to initialize Qdrant collection '{collection_name}': {e}")
