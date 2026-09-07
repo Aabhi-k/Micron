@@ -9,7 +9,7 @@ if _backend_dir not in sys.path:
 import logging
 import uuid
 import os
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
