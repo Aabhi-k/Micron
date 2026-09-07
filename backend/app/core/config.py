@@ -1,12 +1,18 @@
 import os
 from pathlib import Path
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "Micron API"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+
+    # Database (PostgreSQL 16 + asyncpg)
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", 
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/micron"
+    )
 
     # Storage paths
     STORAGE_BASE: Path = Path(os.getenv("STORAGE_BASE", "./storage/projects")).resolve()
@@ -27,17 +33,22 @@ class Settings(BaseSettings):
     MCP_SERVER_COMMAND: str = os.getenv("MCP_SERVER_COMMAND", "python")
     MCP_SERVER_ARGS: List[str] = ["-m", "mcp_server.server"]
 
-    # Vector DB (Qdrant / Chroma)
-    QDRANT_HOST: str = "localhost"
-    QDRANT_PORT: int = 6333
+    # Vector DB (Qdrant)
+    QDRANT_HOST: str = os.getenv("QDRANT_HOST", "localhost")
+    QDRANT_PORT: int = int(os.getenv("QDRANT_PORT", "6333"))
+    QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "business_documents")
 
-    # LLM & Embedding Settings
+    # Embeddings & Search Pipeline
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = "gpt-4o"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    OPENAI_EMBEDDING_MODEL: str = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    FALLBACK_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    CROSS_ENCODER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RRF_K: int = 60
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
 
 settings = Settings()
