@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from app.core.config import settings
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.mcp_client")
 
@@ -23,6 +24,7 @@ def get_server_params():
         env=env
     )
 
+@observe(name="call_mcp_tool", as_type="tool")
 async def call_mcp_tool(tool_name: str, arguments: dict) -> str:
     """Invokes a tool on the sandboxed MCP server via stdio transport."""
     try:

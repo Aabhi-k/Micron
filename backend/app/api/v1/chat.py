@@ -7,6 +7,7 @@ from app.services.mcp_client import call_mcp_tool
 from app.services.rag_engine import query_business_docs
 from app.services.synthesizer import generate_explanation
 from app.db.tenant_guard import validate_tenant_id
+from app.core.observability import observe, trace_tenant_context
 
 logger = logging.getLogger("backend.api.v1.chat")
 router = APIRouter()
@@ -30,6 +31,7 @@ def get_effective_tenant_id(body_tenant: Optional[str], header_tenant: Optional[
     candidate = body_tenant or header_tenant or default_tenant
     return validate_tenant_id(candidate)
 
+@observe(name="explain_function_pipeline", as_type="chain")
 async def explain_function_internal(
     req: ExplainRequest,
     x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID")
@@ -90,6 +92,7 @@ async def explain_function_internal(
         "response": explanation
     }
 
+@observe(name="auto_discover_code", as_type="retriever")
 async def auto_discover_code(query: str, authority_level: int = 3):
     import httpx
     from qdrant_client import QdrantClient
@@ -146,6 +149,7 @@ async def auto_discover_code(query: str, authority_level: int = 3):
     return None, None, None
 
 @router.post("/")
+@observe(name="chat_endpoint", as_type="chain")
 async def chat_endpoint(
     req: ChatQueryRequest,
     x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID")
@@ -153,53 +157,54 @@ async def chat_endpoint(
     """General chat & inquiry endpoint across projects and files under tenant isolation."""
     tenant_id = get_effective_tenant_id(req.tenant_id, x_tenant_id)
 
-    # 1. Auto-discover the best code file if the user didn't specify one
-    if not req.file_path:
-        logger.info(f"Auto-discovering codebase index for query: '{req.query}'")
-        discovered_proj, discovered_path, discovered_func = await auto_discover_code(req.query)
-        if discovered_path:
-            logger.info(f"Discovered relevant file: {discovered_proj}/{discovered_path}")
-            if discovered_proj:
-                req.project_id = discovered_proj
-            req.file_path = discovered_path
-            req.function_name = discovered_func
+    with trace_tenant_context(tenant_id=tenant_id, project_id=req.project_id):
+        # 1. Auto-discover the best code file if the user didn't specify one
+        if not req.file_path:
+            logger.info(f"Auto-discovering codebase index for query: '{req.query}'")
+            discovered_proj, discovered_path, discovered_func = await auto_discover_code(req.query)
+            if discovered_path:
+                logger.info(f"Discovered relevant file: {discovered_proj}/{discovered_path}")
+                if discovered_proj:
+                    req.project_id = discovered_proj
+                req.file_path = discovered_path
+                req.function_name = discovered_func
 
-    # 2. If we have a file (either provided or auto-discovered), run the full MCP + BPD pipeline
-    if req.file_path and req.function_name:
-        return await explain_function_internal(
-            ExplainRequest(
-                project_id=req.project_id,
-                file_path=req.file_path,
-                function_name=req.function_name,
-                user_query=req.query,
-                tenant_id=tenant_id
-            ),
-            x_tenant_id=x_tenant_id
+        # 2. If we have a file (either provided or auto-discovered), run the full MCP + BPD pipeline
+        if req.file_path and req.function_name:
+            return await explain_function_internal(
+                ExplainRequest(
+                    project_id=req.project_id,
+                    file_path=req.file_path,
+                    function_name=req.function_name,
+                    user_query=req.query,
+                    tenant_id=tenant_id
+                ),
+                x_tenant_id=x_tenant_id
+            )
+
+        # General query without specific function
+        business_context = await query_business_docs(
+            tenant_id=tenant_id,
+            project_id=req.project_id,
+            query=req.query
         )
 
-    # General query without specific function
-    business_context = await query_business_docs(
-        tenant_id=tenant_id,
-        project_id=req.project_id,
-        query=req.query
-    )
+        code_data = {
+            "function_name": req.function_name or "General",
+            "file_path": req.file_path or "Project Level",
+            "code_snippet": "",
+            "start_line": 0,
+            "end_line": 0
+        }
 
-    code_data = {
-        "function_name": req.function_name or "General",
-        "file_path": req.file_path or "Project Level",
-        "code_snippet": "",
-        "start_line": 0,
-        "end_line": 0
-    }
+        explanation = await generate_explanation(
+            code_data=code_data,
+            business_context=business_context,
+            user_query=req.query
+        )
 
-    explanation = await generate_explanation(
-        code_data=code_data,
-        business_context=business_context,
-        user_query=req.query
-    )
-
-    return {
-        "tenant_id": tenant_id,
-        "ast_metadata": None,
-        "response": explanation
-    }
+        return {
+            "tenant_id": tenant_id,
+            "ast_metadata": None,
+            "response": explanation
+        }

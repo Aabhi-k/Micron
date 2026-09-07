@@ -7,12 +7,14 @@ from app.services.embeddings import embedding_service
 from app.services.bm25_search import bm25_service
 from app.services.reranker import ReRankingService
 from app.db.tenant_guard import validate_tenant_id, TenantIsolationError
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.retrieval.hybrid_search")
 
 _reranker_service = ReRankingService()
 
 
+@observe(name="hybrid_retrieval", as_type="retriever")
 async def hybrid_retrieval(
     query: str, 
     tenant_id: str, 

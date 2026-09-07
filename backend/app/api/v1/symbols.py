@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.services.mcp_client import call_mcp_tool
 from app.db.session import get_db
 from app.models.project import Project
+from app.core.observability import observe, trace_tenant_context
 
 logger = logging.getLogger("backend.api.v1.symbols")
 router = APIRouter()
@@ -39,6 +40,7 @@ async def _verify_project_ownership(project_id: str, x_tenant_id: Optional[str],
 
 
 @router.get("/ast")
+@observe(name="get_symbol_ast", as_type="tool")
 async def get_symbol_ast(
     project_id: str = Query(..., description="Target project identifier"),
     file_path: str = Query(..., description="Relative file path"),
@@ -49,15 +51,16 @@ async def get_symbol_ast(
     """Extracts exact function code, byte offsets, and AST definition via MCP."""
     await _verify_project_ownership(project_id, x_tenant_id, db)
     try:
-        raw_res = await call_mcp_tool("get_function_ast", {
-            "project_id": project_id,
-            "file_path": file_path,
-            "function_name": function_name
-        })
-        data = json.loads(raw_res) if isinstance(raw_res, str) else raw_res
-        if not data.get("found"):
-            raise HTTPException(status_code=404, detail=data.get("message", "Symbol not found"))
-        return data
+        with trace_tenant_context(tenant_id=x_tenant_id, project_id=project_id):
+            raw_res = await call_mcp_tool("get_function_ast", {
+                "project_id": project_id,
+                "file_path": file_path,
+                "function_name": function_name
+            })
+            data = json.loads(raw_res) if isinstance(raw_res, str) else raw_res
+            if not data.get("found"):
+                raise HTTPException(status_code=404, detail=data.get("message", "Symbol not found"))
+            return data
     except HTTPException:
         raise
     except Exception as e:
@@ -66,6 +69,7 @@ async def get_symbol_ast(
 
 
 @router.get("/dependencies")
+@observe(name="get_symbol_dependencies", as_type="tool")
 async def get_symbol_dependencies(
     project_id: str = Query(..., description="Target project identifier"),
     file_path: str = Query(..., description="Relative file path"),
@@ -75,11 +79,12 @@ async def get_symbol_dependencies(
     """Retrieves file imports, includes, and symbol dependency references."""
     await _verify_project_ownership(project_id, x_tenant_id, db)
     try:
-        raw_res = await call_mcp_tool("get_dependencies", {
-            "project_id": project_id,
-            "file_path": file_path
-        })
-        return json.loads(raw_res) if isinstance(raw_res, str) else raw_res
+        with trace_tenant_context(tenant_id=x_tenant_id, project_id=project_id):
+            raw_res = await call_mcp_tool("get_dependencies", {
+                "project_id": project_id,
+                "file_path": file_path
+            })
+            return json.loads(raw_res) if isinstance(raw_res, str) else raw_res
     except Exception as e:
         logger.error(f"Error fetching dependencies: {e}")
         raise HTTPException(status_code=500, detail=str(e))

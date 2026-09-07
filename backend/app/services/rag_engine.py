@@ -7,9 +7,11 @@ from app.services.embeddings import embedding_service
 from app.services.qdrant_service import qdrant_service
 from app.services.bm25_search import bm25_service
 from app.services.reranker import reranker_service
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.rag_engine")
 
+@observe(name="index_business_document", as_type="span")
 async def index_business_document(
     tenant_id: str,
     title: str,
@@ -80,6 +82,7 @@ async def index_business_document(
         "dimension": dim
     }
 
+@observe(name="search_business_docs", as_type="retriever")
 async def search_business_docs(
     tenant_id: str,
     query: str,
@@ -136,6 +139,7 @@ async def search_business_docs(
 
     return final_results
 
+@observe(name="query_business_docs", as_type="retriever")
 async def query_business_docs(
     tenant_id: str = "default-tenant",
     query: str = "",

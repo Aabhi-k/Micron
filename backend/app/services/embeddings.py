@@ -4,6 +4,7 @@ import logging
 import hashlib
 from typing import List, Optional, Tuple
 from app.core.config import settings
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.embeddings")
 
@@ -17,7 +18,10 @@ class EmbeddingService:
     def _get_openai_client(self):
         if self._openai_client is None and settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("sk-placeholder") and not settings.OPENAI_API_KEY.startswith("dummy"):
             try:
-                from openai import AsyncOpenAI
+                try:
+                    from langfuse.openai import AsyncOpenAI
+                except ImportError:
+                    from openai import AsyncOpenAI
                 self._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             except Exception as e:
                 logger.warning(f"Failed to initialize AsyncOpenAI: {e}")
@@ -47,11 +51,13 @@ class EmbeddingService:
         norm = sum(x * x for x in vector) ** 0.5 or 1.0
         return [x / norm for x in vector]
 
+    @observe(name="generate_embedding", as_type="embedding")
     async def get_embedding(self, text: str) -> Tuple[List[float], int]:
         """Generates a dense embedding vector for the provided text, returning (vector, dimension)."""
         vectors, dim = await self.get_embeddings([text])
         return vectors[0], dim
 
+    @observe(name="generate_embeddings_batch", as_type="embedding")
     async def get_embeddings(self, texts: List[str]) -> Tuple[List[List[float]], int]:
         """Generates dense embeddings for a batch of texts."""
         if not texts:

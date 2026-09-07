@@ -2,6 +2,7 @@ import re
 import logging
 from typing import List, Dict, Any, Optional
 from app.db.tenant_guard import validate_tenant_id, TenantIsolationError
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.bm25")
 
@@ -53,6 +54,7 @@ class BM25SearchService:
                 "tokenized": []
             }
 
+    @observe(name="bm25_search", as_type="retriever")
     async def search(
         self,
         tenant_id: str,
