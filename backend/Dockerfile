@@ -12,7 +12,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app
-COPY main.py .
 
 ENV PYTHONPATH=/app
 ENV STORAGE_BASE=/data/nexsolve/projects
