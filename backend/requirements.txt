@@ -1,5 +1,14 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
+qdrant-client
+langfuse
+psycopg2-binary
+sqlalchemy
+mcp
+langchain
+pydantic
+python-dotenv
+openai
 sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
 aiosqlite>=0.20.0
