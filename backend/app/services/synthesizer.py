@@ -61,18 +61,17 @@ Lines: {start_line}-{end_line}
 Execute the documentation synthesis following the strict Markdown schema."""
 
     gemini_api_key = settings.GEMINI_API_KEY
-    if gemini_api_key and not gemini_api_key.startswith("dummy"):
+    if gemini_api_key:
         try:
             from google import genai
             client = genai.Client(api_key=gemini_api_key)
             response = client.models.generate_content(
-                model="gemini-3.6-flash",
+                model="gemini-2.0-flash",
                 contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}"
             )
             return response.text or "No response generated."
         except Exception as e:
-            logger.debug(f"Gemini generation skipped: {e}")
-
+            logger.warning(f"Gemini completion error: {e}. Falling back to OpenAI/template.")
     if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("dummy"):
         try:
             try:

@@ -80,11 +80,3 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# # Storage & Local Databases
-# storage/projects/*
-# !storage/projects/.gitkeep
-vector_store/
-qdrant_storage/
-
-*.whl

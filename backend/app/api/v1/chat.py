@@ -56,9 +56,26 @@ async def explain_function_internal(
         logger.error(f"Failed to parse MCP response: {e}")
         raise HTTPException(status_code=500, detail="Invalid response from MCP server.")
 
-    # If the function wasn't found in the AST, gracefully fall back to full file read or return an error
+    # If the function wasn't found in the AST, gracefully fall back
     if ast_data.get("status") == "error" or not ast_data.get("found"):
-        raise HTTPException(status_code=404, detail=ast_data.get("error_message", f"Function {req.function_name} not found in AST."))
+        logger.warning(f"AST extraction failed: {ast_data.get('error_message', 'Not found')}. Falling back to general analysis.")
+        code_data = {
+            "file_path": req.file_path,
+            "function_name": req.function_name,
+            "code_snippet": f"// Code for {req.function_name} could not be extracted securely.",
+            "start_line": 0,
+            "end_line": 0,
+            "redactions_applied": []
+        }
+    else:
+        code_data = {
+            "file_path": req.file_path,
+            "function_name": ast_data.get("function_name", req.function_name),
+            "code_snippet": ast_data.get("code_snippet", ""),
+            "start_line": ast_data.get("start_line", 0),
+            "end_line": ast_data.get("end_line", 0),
+            "redactions_applied": ast_data.get("redactions_applied", [])
+        }
 
     # 2. Vector DB & RAG Call: Retrieve authoritative business rules strictly scoped to this tenant
     business_context = await query_business_docs(
@@ -68,13 +85,6 @@ async def explain_function_internal(
     )
 
     # 3. LLM Synthesis using the exact AST bounds
-    code_data = {
-        "function_name": req.function_name,
-        "file_path": req.file_path,
-        "code_snippet": ast_data.get("code_snippet", ""),
-        "start_line": ast_data.get("start_line", 1),
-        "end_line": ast_data.get("end_line", 1)
-    }
     
     explanation = await generate_explanation(
         code_data=code_data,
@@ -189,12 +199,36 @@ async def chat_endpoint(
             query=req.query
         )
 
+        code_snippet = ""
+        redactions = []
+        
+        # If the user selected a file but not a specific function, fetch the whole file!
+        if req.file_path:
+            logger.info(f"Fetching full file context via MCP: {req.file_path}")
+            try:
+                # We need to prepend project_id to the file_path because read_file evaluates relative to STORAGE_PROJECTS_ROOT
+                full_path_for_mcp = f"{req.project_id}/{req.file_path}"
+                mcp_res = await call_mcp_tool("read_file", {"file_path": full_path_for_mcp})
+                if isinstance(mcp_res, str):
+                    import json
+                    mcp_res = json.loads(mcp_res)
+                    
+                if mcp_res.get("status") == "success":
+                    code_snippet = mcp_res.get("sanitized_code", "")
+                    redactions = mcp_res.get("redactions_applied", [])
+                else:
+                    code_snippet = f"// Error reading file: {mcp_res.get('error_message', 'Unknown error')}"
+            except Exception as e:
+                logger.error(f"Failed to read file via MCP: {e}")
+                code_snippet = f"// Failed to read file securely: {str(e)}"
+
         code_data = {
             "function_name": req.function_name or "General",
             "file_path": req.file_path or "Project Level",
-            "code_snippet": "",
+            "code_snippet": code_snippet,
             "start_line": 0,
-            "end_line": 0
+            "end_line": 0,
+            "redactions_applied": redactions
         }
 
         explanation = await generate_explanation(
@@ -203,8 +237,16 @@ async def chat_endpoint(
             user_query=req.query
         )
 
+        ast_metadata = None
+        if req.file_path and code_snippet and not code_snippet.startswith("// Error"):
+            ast_metadata = {
+                "file": req.file_path,
+                "function_name": req.function_name or "Entire File",
+                "redactions": redactions
+            }
+
         return {
             "tenant_id": tenant_id,
-            "ast_metadata": None,
+            "ast_metadata": ast_metadata,
             "response": explanation
         }
