@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.reranker")
 
@@ -22,6 +23,7 @@ class ReRankingService:
                 self._cross_encoder = None
         return self._cross_encoder
 
+    @observe(name="reciprocal_rank_fusion", as_type="span")
     def reciprocal_rank_fusion(
         self,
         dense_results: List[Dict[str, Any]],
@@ -61,6 +63,7 @@ class ReRankingService:
 
         return fused_results
 
+    @observe(name="cross_encoder_rerank", as_type="span")
     async def rerank(
         self,
         query: str,

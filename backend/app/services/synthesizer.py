@@ -3,6 +3,8 @@ import logging
 from typing import Dict, Any, AsyncGenerator
 from app.core.config import settings
 
+from app.core.observability import observe
+
 logger = logging.getLogger("backend.services.synthesizer")
 SYSTEM_PROMPT = """You are a Senior Enterprise Systems Architect and Technical Auditor documentation assistant.
 Your objective is to analyze legacy codebase implementations and explain them strictly through the lens of the provided authoritative Business Process Documents (BPD).
@@ -30,6 +32,7 @@ REQUIRED OUTPUT STRUCTURE:
 [Analyze the code against the BPD. Identify any security risks, missing business rules, or undocumented code behaviors (rogue logic). If perfectly compliant, state "Fully Compliant with provided BPD."]
 """
 
+@observe(name="generate_explanation", as_type="generation")
 async def generate_explanation(code_data: dict, business_context: str, user_query: str) -> str:
     function_name = code_data.get("function_name", "Unknown Function")
     file_path = code_data.get("file_path", "Unknown File")
@@ -68,12 +71,15 @@ Execute the documentation synthesis following the strict Markdown schema."""
             )
             return response.text or "No response generated."
         except Exception as e:
-            pass
+            logger.debug(f"Gemini generation skipped: {e}")
 
     if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("dummy"):
         try:
-            from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_API_BASE_URL)
+            try:
+                from langfuse.openai import AsyncOpenAI
+            except ImportError:
+                from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             response = await client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
                 messages=[
@@ -84,7 +90,7 @@ Execute the documentation synthesis following the strict Markdown schema."""
             )
             return response.choices[0].message.content or "No response generated."
         except Exception as e:
-            pass
+            logger.debug(f"OpenAI generation skipped: {e}")
 
     return f"""## 📄 Component: `{function_name}`
 **Location:** `{file_path}` (Lines {start_line}-{end_line})

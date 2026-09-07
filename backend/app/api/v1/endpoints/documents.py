@@ -6,11 +6,13 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.document import Document, DocumentChunk
 from app.services.ingestion.indexer import process_and_index_document
+from app.core.observability import observe, trace_tenant_context
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 
 @router.post("/upload")
+@observe(name="document_upload_endpoint", as_type="chain")
 async def upload_document(
     file: UploadFile = File(...), 
     x_tenant_id: str = Header(..., alias="X-Tenant-ID"), 
@@ -22,13 +24,14 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
 
     content = await file.read()
-    doc_id = await process_and_index_document(
-        file_content=content,
-        filename=file.filename,
-        tenant_id_str=x_tenant_id,
-        db=db,
-        project_id=project_id
-    )
+    with trace_tenant_context(tenant_id=x_tenant_id, project_id=project_id):
+        doc_id = await process_and_index_document(
+            file_content=content,
+            filename=file.filename,
+            tenant_id_str=x_tenant_id,
+            db=db,
+            project_id=project_id
+        )
 
     return {
         "document_id": str(doc_id) if doc_id else "",

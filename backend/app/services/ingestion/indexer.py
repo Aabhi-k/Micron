@@ -11,10 +11,12 @@ from app.models.project import Project
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.qdrant import get_qdrant_client, COLLECTION_NAME as ENTERPRISE_COLLECTION
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.services.ingestion.indexer")
 
 
+@observe(name="extract_document_text", as_type="span")
 def extract_text_from_content(file_content: bytes, filename: str) -> str:
     """Extracts text from binary file content supporting PDF, MD, TXT, and plain text."""
     fname_lower = filename.lower()
@@ -35,6 +37,7 @@ def extract_text_from_content(file_content: bytes, filename: str) -> str:
     return file_content.decode("utf-8", errors="ignore")
 
 
+@observe(name="process_and_index_document", as_type="chain")
 async def process_and_index_document(
     file_content: bytes, 
     filename: str, 

@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException, status
 from app.schemas.rag import SearchRequest, SearchResponse, ChunkResult
 from app.services.retrieval.hybrid_search import hybrid_retrieval
+from app.core.observability import observe, trace_tenant_context
 
 logger = logging.getLogger("backend.api.v1.rag")
 
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/rag", tags=["RAG"])
 
 
 @router.post("/search", response_model=SearchResponse, status_code=status.HTTP_200_OK)
+@observe(name="rag_search_endpoint", as_type="retriever")
 async def search_rag(
     request: SearchRequest,
     x_tenant_id: str = Header(..., alias="X-Tenant-ID", description="Mandatory tenant isolation identifier")
@@ -30,12 +32,13 @@ async def search_rag(
 
     start_time = time.perf_counter()
     try:
-        raw_results = await hybrid_retrieval(
-            query=request.query,
-            tenant_id=x_tenant_id,
-            top_k=request.top_k,
-            project_id=request.project_id
-        )
+        with trace_tenant_context(tenant_id=x_tenant_id, project_id=request.project_id):
+            raw_results = await hybrid_retrieval(
+                query=request.query,
+                tenant_id=x_tenant_id,
+                top_k=request.top_k,
+                project_id=request.project_id
+            )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

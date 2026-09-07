@@ -14,6 +14,7 @@ from app.core.security import get_project_root
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.tenant import Tenant
+from app.core.observability import observe
 
 logger = logging.getLogger("backend.api.v1.projects")
 router = APIRouter()
@@ -241,6 +242,7 @@ class SearchLegacyRequest(BaseModel):
     top_k: int = 3
 
 @router.post("/search-legacy")
+@observe(name="search_legacy_index", as_type="retriever")
 async def search_legacy_index(req: SearchLegacyRequest):
     import httpx
     from qdrant_client.http import models
