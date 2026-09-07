@@ -92,8 +92,10 @@ async def health_check():
         "vector_db": "qdrant (async)",
         "redis": "connected" if redis_healthy else "disconnected",
         "fusion": f"RRF (k={settings.RRF_K})",
-        "reranker": settings.CROSS_ENCODER_MODEL
+        "reranker": settings.CROSS_ENCODER_MODEL,
+        "observability": "langfuse-cloud" if "cloud.langfuse.com" in settings.LANGFUSE_HOST else settings.LANGFUSE_HOST
     }
+
 
 
 
