@@ -1,8 +1,13 @@
 import json
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
+import uuid
+from app.db.session import get_db
+from app.models.chat_history import ChatHistory
 from app.services.mcp_client import call_mcp_tool
 from app.services.rag_engine import query_business_docs
 from app.services.synthesizer import generate_explanation
@@ -162,7 +167,8 @@ async def auto_discover_code(query: str, authority_level: int = 3):
 @observe(name="chat_endpoint", as_type="chain")
 async def chat_endpoint(
     req: ChatQueryRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID")
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    db: AsyncSession = Depends(get_db)
 ):
     """General chat & inquiry endpoint across projects and files under tenant isolation."""
     tenant_id = get_effective_tenant_id(req.tenant_id, x_tenant_id)
@@ -181,7 +187,7 @@ async def chat_endpoint(
 
         # 2. If we have a file (either provided or auto-discovered), run the full MCP + BPD pipeline
         if req.file_path and req.function_name:
-            return await explain_function_internal(
+            result = await explain_function_internal(
                 ExplainRequest(
                     project_id=req.project_id,
                     file_path=req.file_path,
@@ -191,62 +197,132 @@ async def chat_endpoint(
                 ),
                 x_tenant_id=x_tenant_id
             )
+        else:
+            # General query without specific function
+            business_context = await query_business_docs(
+                tenant_id=tenant_id,
+                project_id=req.project_id,
+                query=req.query
+            )
 
-        # General query without specific function
-        business_context = await query_business_docs(
-            tenant_id=tenant_id,
-            project_id=req.project_id,
-            query=req.query
-        )
+            code_snippet = ""
+            redactions = []
+            
+            # If the user selected a file but not a specific function, fetch the whole file!
+            if req.file_path:
+                logger.info(f"Fetching full file context via MCP: {req.file_path}")
+                try:
+                    full_path_for_mcp = f"{req.project_id}/{req.file_path}"
+                    mcp_res = await call_mcp_tool("read_file", {"file_path": full_path_for_mcp})
+                    if isinstance(mcp_res, str):
+                        import json
+                        mcp_res = json.loads(mcp_res)
+                        
+                    if mcp_res.get("status") == "success":
+                        code_snippet = mcp_res.get("sanitized_code", "")
+                        redactions = mcp_res.get("redactions_applied", [])
+                    else:
+                        code_snippet = f"// Error reading file: {mcp_res.get('error_message', 'Unknown error')}"
+                except Exception as e:
+                    logger.error(f"Failed to read file via MCP: {e}")
+                    code_snippet = f"// Failed to read file securely: {str(e)}"
 
-        code_snippet = ""
-        redactions = []
-        
-        # If the user selected a file but not a specific function, fetch the whole file!
-        if req.file_path:
-            logger.info(f"Fetching full file context via MCP: {req.file_path}")
-            try:
-                # We need to prepend project_id to the file_path because read_file evaluates relative to STORAGE_PROJECTS_ROOT
-                full_path_for_mcp = f"{req.project_id}/{req.file_path}"
-                mcp_res = await call_mcp_tool("read_file", {"file_path": full_path_for_mcp})
-                if isinstance(mcp_res, str):
-                    import json
-                    mcp_res = json.loads(mcp_res)
-                    
-                if mcp_res.get("status") == "success":
-                    code_snippet = mcp_res.get("sanitized_code", "")
-                    redactions = mcp_res.get("redactions_applied", [])
-                else:
-                    code_snippet = f"// Error reading file: {mcp_res.get('error_message', 'Unknown error')}"
-            except Exception as e:
-                logger.error(f"Failed to read file via MCP: {e}")
-                code_snippet = f"// Failed to read file securely: {str(e)}"
-
-        code_data = {
-            "function_name": req.function_name or "General",
-            "file_path": req.file_path or "Project Level",
-            "code_snippet": code_snippet,
-            "start_line": 0,
-            "end_line": 0,
-            "redactions_applied": redactions
-        }
-
-        explanation = await generate_explanation(
-            code_data=code_data,
-            business_context=business_context,
-            user_query=req.query
-        )
-
-        ast_metadata = None
-        if req.file_path and code_snippet and not code_snippet.startswith("// Error"):
-            ast_metadata = {
-                "file": req.file_path,
-                "function_name": req.function_name or "Entire File",
-                "redactions": redactions
+            code_data = {
+                "function_name": req.function_name or "General",
+                "file_path": req.file_path or "Project Level",
+                "code_snippet": code_snippet,
+                "start_line": 0,
+                "end_line": 0,
+                "redactions_applied": redactions
             }
 
-        return {
-            "tenant_id": tenant_id,
-            "ast_metadata": ast_metadata,
-            "response": explanation
-        }
+            explanation = await generate_explanation(
+                code_data=code_data,
+                business_context=business_context,
+                user_query=req.query
+            )
+
+            ast_metadata = None
+            if req.file_path and code_snippet and not code_snippet.startswith("// Error"):
+                ast_metadata = {
+                    "file": req.file_path,
+                    "function_name": req.function_name or "Entire File",
+                    "redactions": redactions
+                }
+
+            result = {
+                "tenant_id": tenant_id,
+                "ast_metadata": ast_metadata,
+                "response": explanation
+            }
+
+        # Convert string tenant to UUID for Postgres
+        if tenant_id == "default-tenant":
+            db_tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        else:
+            try:
+                db_tenant_uuid = uuid.UUID(tenant_id)
+            except ValueError:
+                db_tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, tenant_id)
+
+        # Save to Chat History
+        try:
+            # Seed tenant if missing to prevent ForeignKeyViolation
+            from app.models.tenant import Tenant
+            t_res = await db.execute(select(Tenant).where(Tenant.id == db_tenant_uuid))
+            if not t_res.scalar_one_or_none():
+                db.add(Tenant(id=db_tenant_uuid, name="Auto-seeded Tenant"))
+                await db.commit()
+
+            history_entry = ChatHistory(
+                tenant_id=db_tenant_uuid,
+                project_id=req.project_id,
+                user_query=req.query,
+                llm_response=result["response"],
+                ast_metadata=result["ast_metadata"]
+            )
+            db.add(history_entry)
+            await db.commit()
+            await db.refresh(history_entry)
+            result["id"] = str(history_entry.id)
+        except Exception as e:
+            logger.error(f"Failed to save chat history: {e}")
+            await db.rollback()
+            
+        return result
+
+@router.get("/history/{project_id}")
+async def get_chat_history(
+    project_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve chat history for a given project and tenant."""
+    tenant_id = get_effective_tenant_id(None, x_tenant_id)
+    
+    # Convert string tenant to UUID for Postgres
+    if tenant_id == "default-tenant":
+        db_tenant_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    else:
+        try:
+            db_tenant_uuid = uuid.UUID(tenant_id)
+        except ValueError:
+            db_tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, tenant_id)
+    
+    query = select(ChatHistory).where(
+        ChatHistory.tenant_id == db_tenant_uuid,
+        ChatHistory.project_id == project_id
+    ).order_by(desc(ChatHistory.created_at)).limit(50)
+    
+    res = await db.execute(query)
+    history = res.scalars().all()
+    
+    return [
+        {
+            "id": str(h.id),
+            "query": h.user_query,
+            "response": h.llm_response,
+            "ast_metadata": h.ast_metadata,
+            "created_at": h.created_at.isoformat()
+        } for h in history
+    ]

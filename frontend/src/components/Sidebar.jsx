@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react"
 import { LayoutDashboard, Activity, PenSquare, Plus, FolderOpen, RefreshCw, Loader2 } from "lucide-react"
 import FileTree from "./FileTree"
+import HistoryPanel from "./HistoryPanel"
 
-export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenDashboard, onOpenActivity }) {
+export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenDashboard, onOpenActivity, onSelectHistory }) {
   const [rootName, setRootName]   = useState("passman-main")
   const [tree, setTree]           = useState(null)
   const [loading, setLoading]     = useState(false)
+  const [activeTab, setActiveTab] = useState("files") // "files" or "history"
 
   const loadProjectFiles = async () => {
     try {
@@ -44,43 +46,61 @@ export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenD
         </button>
       </div>
 
-      {/* Directory section */}
-      <div className="flex flex-col px-3 py-2 flex-1 min-h-0">
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] uppercase tracking-widest text-[#8e8ea0] font-semibold px-1">
-            Directory
-          </p>
-          <button
-            onClick={loadProjectFiles}
-            title="Refresh folder"
-            className="p-1 rounded hover:bg-white/10 text-[#8e8ea0] hover:text-[#ececec] transition-colors"
-          >
-            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
-          </button>
-        </div>
+      {/* Tabs */}
+      <div className="flex px-3 border-b border-[#ececec]/10">
+        <button 
+          onClick={() => setActiveTab("files")} 
+          className={`flex-1 pb-1 text-xs font-semibold uppercase tracking-widest ${activeTab === "files" ? "text-[#10a37f] border-b-2 border-[#10a37f]" : "text-[#8e8ea0] hover:text-[#ececec]"}`}
+        >
+          Files
+        </button>
+        <button 
+          onClick={() => setActiveTab("history")} 
+          className={`flex-1 pb-1 text-xs font-semibold uppercase tracking-widest ${activeTab === "history" ? "text-[#10a37f] border-b-2 border-[#10a37f]" : "text-[#8e8ea0] hover:text-[#ececec]"}`}
+        >
+          History
+        </button>
+      </div>
 
-        {/* Loading spinner */}
-        {loading && (
-          <div className="flex items-center gap-2 px-2 py-3">
-            <Loader2 size={14} className="text-[#10a37f] animate-spin" />
-            <span className="text-xs text-[#8e8ea0]">Reading folder…</span>
-          </div>
-        )}
+      {/* Main content area */}
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {activeTab === "files" ? (
+          <div className="flex flex-col px-3 py-2 flex-1 min-h-0">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-widest text-[#8e8ea0] font-semibold px-1">
+                Directory
+              </p>
+              <button
+                onClick={loadProjectFiles}
+                title="Refresh folder"
+                className="p-1 rounded hover:bg-white/10 text-[#8e8ea0] hover:text-[#ececec] transition-colors"
+              >
+                <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
 
-        {/* Root label + tree */}
-        {rootName && !loading && tree && (
-          <div className="flex flex-col min-h-0 flex-1">
-            {/* Root folder row */}
-            <div className="flex items-center gap-1.5 px-1 py-1 mb-0.5">
-              <FolderOpen size={13} className="text-[#10a37f] shrink-0" />
-              <span className="text-[11px] font-semibold text-[#ececec] truncate">{rootName}</span>
-            </div>
-            {/* Scrollable tree */}
-            <div className="overflow-y-auto flex-1 pr-1">
-              <FileTree tree={tree} selectedPath={selectedPath} onSelectFile={onSelectFile} />
-            </div>
+            {loading && !tree ? (
+              <div className="flex justify-center py-4">
+                <Loader2 size={16} className="animate-spin text-[#8e8ea0]" />
+              </div>
+            ) : !tree ? (
+              <p className="text-xs text-[#8e8ea0] px-1">No files loaded.</p>
+            ) : (
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-black/20 rounded-md border border-[#ececec]/10 py-1">
+                {/* Root node display */}
+                <div className="flex items-center gap-1.5 px-1 py-1 mb-0.5">
+                  <FolderOpen size={13} className="text-[#10a37f] shrink-0" />
+                  <span className="text-[11px] font-semibold text-[#ececec] truncate">{rootName}</span>
+                </div>
+                {/* Scrollable tree */}
+                <div className="overflow-y-auto flex-1 pr-1">
+                  <FileTree tree={tree} selectedPath={selectedPath} onSelectFile={onSelectFile} />
+                </div>
+              </div>
+            )}
           </div>
+        ) : (
+          <HistoryPanel projectId="passman-main" onSelectHistory={onSelectHistory} />
         )}
       </div>
 

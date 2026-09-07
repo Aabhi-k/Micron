@@ -128,6 +128,31 @@ function App() {
     setViewMode('chat')
   }
 
+  const handleSelectHistory = (hist) => {
+    // Clear current chat
+    setMessages([])
+    setSelectedPath('')
+
+    // Insert the historic query
+    const userMessage = { role: 'user', content: hist.query }
+    
+    // Format the historic response to match backend endpoint output
+    const formattedData = {
+      markdown: hist.response,
+      sanitized_code: hist.ast_metadata ? `// Extracted from: ${hist.ast_metadata.file}\n// Function: ${hist.ast_metadata.function_name}\n// Redactions applied: ${hist.ast_metadata.redactions.join(', ') || 'None'}` : null,
+      citations: [],
+      trace_id: null
+    }
+
+    const assistantMessage = {
+      role: 'assistant',
+      data: formattedData,
+    }
+
+    setMessages([userMessage, assistantMessage])
+    setViewMode('chat')
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white">
       {/* Left dark sidebar */}
@@ -137,6 +162,7 @@ function App() {
         onNewChat={handleNewChat}
         onOpenDashboard={() => setViewMode('dashboard')}
         onOpenActivity={() => setViewMode('activity')}
+        onSelectHistory={handleSelectHistory}
       />
 
       {/* Main content area */}
