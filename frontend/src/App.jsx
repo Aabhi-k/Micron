@@ -7,7 +7,7 @@ import AdminDashboard from './components/AdminDashboard'
 import ActivityView from './components/ActivityView'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { FileCode, Tag, CheckCircle2, AlertCircle } from 'lucide-react'
+import { FileCode, Tag, CheckCircle2, AlertCircle, Download } from 'lucide-react'
 
 // Initial pre-populated history items for demonstration
 const initialHistory = [
@@ -261,12 +261,33 @@ function App() {
                                   </div>
                                 )}
 
-                                {/* Trace ID footer */}
-                                {msg.data?.trace_id && (
-                                  <div className="text-[10px] text-gray-400 font-mono pt-2 border-t border-gray-100">
-                                    Trace ID: {msg.data.trace_id}
-                                  </div>
-                                )}
+                                {/* Bottom Meta Row: Download & Trace ID */}
+                                <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-3">
+                                  <button
+                                    onClick={() => {
+                                      const blob = new Blob([msg.data.markdown], { type: 'text/markdown;charset=utf-8' });
+                                      const url = URL.createObjectURL(blob);
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      link.download = `micron_audit_${new Date().getTime()}.md`;
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+                                      URL.revokeObjectURL(url);
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#10a37f] transition-colors font-medium px-2 py-1 rounded-md hover:bg-emerald-50/50"
+                                  >
+                                    <Download size={14} />
+                                    Download Markdown
+                                  </button>
+
+                                  {msg.data?.trace_id && (
+                                    <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                      <span className="font-semibold text-purple-600/70">Trace:</span>
+                                      {msg.data.trace_id}
+                                    </div>
+                                  )}
+                                </div>
                               </>
                             )}
                           </div>

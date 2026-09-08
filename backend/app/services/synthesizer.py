@@ -60,32 +60,22 @@ Lines: {start_line}-{end_line}
 
 Execute the documentation synthesis following the strict Markdown schema."""
 
-    gemini_api_key = settings.GEMINI_API_KEY
-    if gemini_api_key:
-        try:
-            from google import genai
-            client = genai.Client(api_key=gemini_api_key)
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}"
-            )
-            return response.text or "No response generated."
-        except Exception as e:
-            logger.warning(f"Gemini completion error: {e}. Falling back to OpenAI/template.")
-    if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("dummy"):
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+
+    if openai_api_key:
         try:
             try:
                 from langfuse.openai import AsyncOpenAI
             except ImportError:
                 from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            client = AsyncOpenAI(api_key=openai_api_key)
             response = await client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.1
+                temperature=0.1 
             )
             return response.choices[0].message.content or "No response generated."
         except Exception as e:

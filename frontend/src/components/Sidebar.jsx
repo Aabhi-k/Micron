@@ -128,7 +128,10 @@ export default function Sidebar({ selectedPath, onSelectFile, onNewChat, onOpenD
           <div className="w-7 h-7 rounded-full bg-[#3d5afb] flex items-center justify-center text-white text-xs font-bold shrink-0">
             E
           </div>
-          <span className="text-sm truncate">Employee</span>
+          <div className="flex flex-col">
+            <span className="text-sm truncate">Employee</span>
+            <span className="text-[10px] text-[#8e8ea0] font-mono">Auth Level: 3 (Admin)</span>
+          </div>
         </div>
       </div>
     </aside>
